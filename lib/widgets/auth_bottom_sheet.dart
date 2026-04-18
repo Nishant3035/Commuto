@@ -101,11 +101,54 @@ class _AuthBottomSheetState extends State<AuthBottomSheet> {
           Navigator.pop(context, true);
         }
       } catch (e) {
+        String errorMsg = 'Invalid OTP. Please try again.';
+        final errStr = e.toString().toLowerCase();
+        if (errStr.contains('invalid-verification-code') || errStr.contains('wrong')) {
+          errorMsg = 'Wrong verification code. Please check and re-enter.';
+        } else if (errStr.contains('session-expired') || errStr.contains('expired')) {
+          errorMsg = 'Code expired. Please tap Resend to get a new code.';
+        } else if (errStr.contains('too-many-requests') || errStr.contains('quota')) {
+          errorMsg = 'Too many attempts. Please wait a few minutes.';
+        } else if (errStr.contains('network')) {
+          errorMsg = 'Network error. Please check your connection.';
+        }
         setState(() {
           _isLoading = false;
-          _errorText = 'Invalid OTP. Please try again.';
+          _errorText = errorMsg;
         });
       }
+    }
+  }
+
+  void _resendCode() async {
+    setState(() {
+      _isLoading = true;
+      _errorText = null;
+      _enteredOtp = '';
+    });
+
+    try {
+      await AuthService.verifyPhone(
+        phone: _phoneController.text.trim(),
+        onCodeSent: (verificationId) {
+          setState(() {
+            _isLoading = false;
+            _verificationId = verificationId;
+          });
+          _startTimer();
+        },
+        onError: (e) {
+          setState(() {
+            _isLoading = false;
+            _errorText = e.message ?? 'Failed to resend code';
+          });
+        },
+      );
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _errorText = 'Failed to resend. Try again.';
+      });
     }
   }
 
@@ -268,7 +311,7 @@ class _AuthBottomSheetState extends State<AuthBottomSheet> {
               child: Center(
                 child: _canResend
                     ? TextButton(
-                        onPressed: _handleAction,
+                        onPressed: _resendCode,
                         style: TextButton.styleFrom(
                           foregroundColor: const Color(0xFF1D4ED8),
                         ),
