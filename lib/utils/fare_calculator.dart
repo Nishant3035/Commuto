@@ -1,14 +1,14 @@
 import 'dart:math';
 
-/// Fare calculator based on Mumbai auto-rickshaw rates
-/// Base fare: ₹23 for first 1.5 km
-/// Per km after: ₹16.56/km
-/// Time charge: ₹2/min for waiting/slow traffic
+/// Fare calculator based on Mumbai auto-rickshaw rates (effective Feb 2025)
+/// Base fare: ₹26 for first 1.5 km
+/// Per km after: ₹17.14/km
+/// Night surcharge: 25% (12 AM – 5 AM)
 /// Split between 3 passengers + ₹2 app fee per user
 class FareCalculator {
-  static const double baseFare = 23.0; // First 1.5 km
+  static const double baseFare = 26.0; // First 1.5 km
   static const double baseDistance = 1.5; // km
-  static const double perKmRate = 16.56; // Per km after base
+  static const double perKmRate = 17.14; // Per km after base
   static const double perMinuteRate = 2.0; // Waiting/slow traffic
   static const double appFeePerUser = 2.0; // App fee
   static const int defaultPassengers = 3; // Auto sharing split
