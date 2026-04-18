@@ -127,7 +127,7 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
             MaterialPageRoute(
               builder: (_) => ChatScreen(
                 rideId: widget.rideId,
-                rideDriverId: AuthService.currentUser?.uid ?? '',
+                rideDriverId: AuthService.userId,
               ),
             ),
           ),

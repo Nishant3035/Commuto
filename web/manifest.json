@@ -1,11 +1,11 @@
 {
-    "name": "commuto",
-    "short_name": "commuto",
+    "name": "Commuto - Share Rides",
+    "short_name": "Commuto",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#0f172a",
+    "theme_color": "#1D4ED8",
+    "description": "Share rides. Save money. Go green. The smart ride-sharing platform for students.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

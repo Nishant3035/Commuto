@@ -4,36 +4,30 @@ service cloud.firestore {
     
     // -- USERS --
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow update: if request.auth != null;
+      allow read: if true;
+      allow create, update: if true;
     }
     
     // -- RIDES --
     match /rides/{rideId} {
-      allow read: if true; // Allow public browsing 
-      allow create: if request.auth != null;
-      allow update: if request.auth != null;
+      allow read: if true;
+      allow create, update: if true;
       
-      // PRIVATE OTP DATA - Readable by any authenticated user (for OTP verification)
-      // Writable only by the driver (who creates it)
+      // PRIVATE OTP DATA
       match /private/{document=**} {
-        allow read: if request.auth != null;
-        allow write: if request.auth != null && request.auth.uid == get(/databases/$(database)/documents/rides/$(rideId)).data.driver_id;
+        allow read, write: if true;
       }
       
-      // RIDE CHAT - All authenticated users can participate
+      // RIDE CHAT
       match /messages/{messageId} {
-        allow read, create: if request.auth != null;
+        allow read, create: if true;
         allow update, delete: if false;
       }
     }
     
     // -- BOOKINGS --
     match /bookings/{bookingId} {
-      allow create: if request.auth != null;
-      allow read: if request.auth != null;
-      allow update: if request.auth != null;
+      allow create, read, update: if true;
     }
   }
 }

@@ -160,7 +160,7 @@ class _OfferRideScreenState extends State<OfferRideScreen>
 
       final ride = RideModel(
         id: '', // Will be assigned by Firestore
-        driverId: AuthService.currentUser!.uid,
+        driverId: AuthService.userId,
         sourceName: _pickupAddress!,
         sourceLatLng: GeoPoint(_pickupLatLng!.latitude, _pickupLatLng!.longitude),
         destinationName: _destinationAddress!,

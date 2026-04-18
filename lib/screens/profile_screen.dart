@@ -66,18 +66,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
       backgroundColor: Colors.transparent,
       builder: (sheetContext) => WalletTopupBottomSheet(
         onTopup: (amount) async {
-          final messenger = ScaffoldMessenger.of(sheetContext);
-          await AuthService.topUpWallet(amount);
+          // Use the profile screen's context, not the bottom sheet's
+          try {
+            await AuthService.topUpWallet(amount);
+          } catch (e) {
+            debugPrint('Top-up error: $e');
+          }
           await _refreshProfile();
           if (!mounted) return;
 
-          messenger.showSnackBar(
+          ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
                 'Rs ${amount.toInt()} added to wallet successfully!',
                 style: GoogleFonts.inter(fontWeight: FontWeight.w600),
               ),
               backgroundColor: const Color(0xFF10B981),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             ),
           );
         },

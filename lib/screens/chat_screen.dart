@@ -24,7 +24,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final FirestoreService _firestoreService = FirestoreService();
   bool _isSending = false;
 
-  String get _currentUserId => AuthService.currentUser?.uid ?? '';
+  String get _currentUserId => AuthService.userId;
   String get _currentUserName => AuthService.fullName;
   bool get _isDriver => _currentUserId == widget.rideDriverId;
 

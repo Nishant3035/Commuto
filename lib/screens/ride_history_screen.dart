@@ -33,7 +33,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen>
 
   @override
   Widget build(BuildContext context) {
-    final userId = AuthService.currentUser?.uid;
+    final userId = AuthService.isLoggedIn ? AuthService.userId : null;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -70,7 +70,7 @@ class _RideHistoryScreenState extends State<RideHistoryScreen>
           ],
         ),
       ),
-      body: userId == null
+      body: (userId == null || userId.isEmpty)
           ? _buildEmptyState('Please log in to see your ride history')
           : TabBarView(
               controller: _tabController,

@@ -25,11 +25,11 @@ class _FindRideScreenState extends State<FindRideScreen> {
 
   void _handleJoinRide(RideModel ride) async {
     // Prevent user from booking their own ride
-    final currentUser = AuthService.currentUser;
-    if (currentUser != null && ride.driverId == currentUser.uid) {
+    debugPrint('[FindRide] My userId: ${AuthService.userId}, ride driverId: ${ride.driverId}');
+    if (AuthService.isLoggedIn && ride.driverId == AuthService.userId) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('You cannot join your own ride!', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+          content: Text('This is your ride (${AuthService.userId})', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
           backgroundColor: const Color(0xFFF59E0B),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
