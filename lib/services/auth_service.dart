@@ -90,11 +90,15 @@ class AuthService {
         sum += int.tryParse(phone[i]) ?? 0;
     }
     final persona = _demoPersonas[sum % _demoPersonas.length];
+    
+    // Make the name explicitly unique by appending last 4 digits of phone
+    final String last4 = phone.length >= 4 ? phone.substring(phone.length - 4) : phone;
+    final String uniqueName = '${persona['name']} ($last4)';
 
     // Create a demo profile
     _cachedProfile = UserModel(
       id: docId,
-      name: persona['name']!,
+      name: uniqueName,
       phoneNumber: '+91$phone',
       gender: persona['gender']!,
       collegeOrCompany: persona['college']!,
@@ -222,9 +226,14 @@ class AuthService {
     final doc = await _db.collection('users').doc(uid).get();
     if (doc.exists) {
       final profile = UserModel.fromMap(doc.data()!, doc.id);
-      if (demoMode || currentUser?.uid == uid) {
+      
+      // ONLY update the cache if we are intentionally fetching the CURRENT user's profile
+      if (!demoMode && currentUser?.uid == uid) {
+        _cachedProfile = profile;
+      } else if (demoMode && _cachedProfile?.id == uid) {
         _cachedProfile = profile;
       }
+      
       return profile;
     }
     return null;
