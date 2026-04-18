@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "906498268429",
+    "project_id": "commuto-for-students",
+    "storage_bucket": "commuto-for-students.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:906498268429:android:55fbb8308577217eb52444",
+        "android_client_info": {
+          "package_name": "com.commuto.commuto"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAIufWlYIMDeSjguBRc0ROu1CfBoPVMk58"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
