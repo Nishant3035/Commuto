@@ -1,11 +1,15 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 import '../services/firestore_service.dart';
 import '../services/auth_service.dart';
+import '../services/location_service.dart';
 import '../models/booking_model.dart';
 import '../models/user_model.dart';
+import '../widgets/sos_overlay_widget.dart';
 import 'chat_screen.dart';
 import 'ride_summary_screen.dart';
 
@@ -34,11 +38,21 @@ class DriverActiveRideScreen extends StatefulWidget {
 class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
   final FirestoreService _firestoreService = FirestoreService();
   String? _otp;
+  LatLng? _currentLocation;
+  StreamSubscription<LatLng>? _locationSub;
 
   @override
   void initState() {
     super.initState();
     _fetchOtp();
+    _startLocationPublishing();
+  }
+
+  @override
+  void dispose() {
+    _locationSub?.cancel();
+    LocationService.stopTracking();
+    super.dispose();
   }
 
   Future<void> _fetchOtp() async {
@@ -52,35 +66,56 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
     }
   }
 
+  void _startLocationPublishing() {
+    _locationSub = LocationService.startTracking(distanceFilter: 15).listen(
+      (position) {
+        if (mounted) {
+          setState(() => _currentLocation = position);
+          _firestoreService.updateRideLiveLocation(
+            widget.rideId,
+            position.latitude,
+            position.longitude,
+          );
+        }
+      },
+    );
+  }
+
   void _copyOtp() {
     if (_otp != null) {
       Clipboard.setData(ClipboardData(text: _otp!));
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('OTP copied to clipboard', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+          content: Text('OTP copied to clipboard',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
           backgroundColor: const Color(0xFF2563EB),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
     }
   }
 
   void _endRide() async {
-    // Mark ride as completed in Firestore
+    _locationSub?.cancel();
+    LocationService.stopTracking();
     await _firestoreService.endRide(widget.rideId);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Ride ended. Thank you for driving with Commuto!', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+        content: Text('Ride ended. Thank you for driving with Commuto!',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
         backgroundColor: const Color(0xFF10B981),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (_) => RideSummaryScreen(rideId: widget.rideId)),
+      MaterialPageRoute(
+          builder: (_) => RideSummaryScreen(rideId: widget.rideId)),
     );
   }
 
@@ -93,13 +128,22 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
           showDialog(
             context: context,
             builder: (ctx) => AlertDialog(
-              title: Text('Leave ride?', style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
-              content: Text('Your ride is still active. Are you sure you want to leave?', style: GoogleFonts.inter()),
+              title: Text('Leave ride?',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
+              content: Text(
+                  'Your ride is still active. Are you sure you want to leave?',
+                  style: GoogleFonts.inter()),
               actions: [
-                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Stay')),
                 TextButton(
-                  onPressed: () { Navigator.pop(ctx); Navigator.pop(context); },
-                  child: const Text('Leave', style: TextStyle(color: Colors.red)),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Stay')),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    Navigator.pop(context);
+                  },
+                  child: const Text('Leave',
+                      style: TextStyle(color: Colors.red)),
                 ),
               ],
             ),
@@ -112,12 +156,20 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
           backgroundColor: Colors.white,
           elevation: 0,
           automaticallyImplyLeading: false,
-          title: Text('Your Active Ride', style: GoogleFonts.inter(color: const Color(0xFF1A1D26), fontSize: 20, fontWeight: FontWeight.w800)),
+          title: Text('Your Active Ride',
+              style: GoogleFonts.inter(
+                  color: const Color(0xFF1A1D26),
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800)),
           centerTitle: true,
           actions: [
             TextButton(
               onPressed: _endRide,
-              child: Text('End Ride', style: GoogleFonts.inter(color: const Color(0xFFEF4444), fontWeight: FontWeight.w700, fontSize: 14)),
+              child: Text('End Ride',
+                  style: GoogleFonts.inter(
+                      color: const Color(0xFFEF4444),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14)),
             ),
           ],
         ),
@@ -134,33 +186,73 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
           backgroundColor: const Color(0xFF2563EB),
           child: const Icon(Icons.chat_rounded, color: Colors.white),
         ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // OTP Display Card
-              _buildOtpCard(),
-              const SizedBox(height: 20),
+        body: Stack(
+          children: [
+            SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Live Location Status
+                  if (_currentLocation != null)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFECFDF5),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF10B981),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Live location sharing active',
+                            style: GoogleFonts.inter(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF059669),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
 
-              // Route Card
-              _buildRouteCard(),
-              const SizedBox(height: 20),
+                  // OTP Display Card
+                  _buildOtpCard(),
+                  const SizedBox(height: 20),
 
-              // Live Passengers Section
-              Text(
-                'PASSENGERS',
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: const Color(0xFF94A3B8),
-                  letterSpacing: 0.5,
-                ),
+                  // Route Card
+                  _buildRouteCard(),
+                  const SizedBox(height: 20),
+
+                  // Live Passengers Section
+                  Text(
+                    'PASSENGERS',
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF94A3B8),
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildLivePassengersList(),
+                ],
               ),
-              const SizedBox(height: 12),
-              _buildLivePassengersList(),
-            ],
-          ),
+            ),
+
+            // SOS Overlay
+            SOSOverlayWidget(rideId: widget.rideId),
+          ],
         ),
       ),
     );
@@ -195,15 +287,23 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
                   color: Colors.white.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.shield_rounded, color: Colors.white, size: 24),
+                child: const Icon(Icons.shield_rounded,
+                    color: Colors.white, size: 24),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Ride OTP', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white.withValues(alpha: 0.8))),
-                    Text('Share with passengers before boarding', style: GoogleFonts.inter(fontSize: 11, color: Colors.white.withValues(alpha: 0.6))),
+                    Text('Ride OTP',
+                        style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white.withValues(alpha: 0.8))),
+                    Text('Share with passengers before boarding',
+                        style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: Colors.white.withValues(alpha: 0.6))),
                   ],
                 ),
               ),
@@ -215,7 +315,8 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
                     color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.copy_rounded, color: Colors.white, size: 18),
+                  child: const Icon(Icons.copy_rounded,
+                      color: Colors.white, size: 18),
                 ),
               ),
             ],
@@ -233,7 +334,8 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
           const SizedBox(height: 8),
           Text(
             'Ask passengers to enter this code',
-            style: GoogleFonts.inter(fontSize: 13, color: Colors.white.withValues(alpha: 0.7)),
+            style: GoogleFonts.inter(
+                fontSize: 13, color: Colors.white.withValues(alpha: 0.7)),
           ),
         ],
       ),
@@ -255,14 +357,18 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
               Column(
                 children: [
                   Container(
-                    width: 10, height: 10,
+                    width: 10,
+                    height: 10,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      border: Border.all(color: const Color(0xFF10B981), width: 2.5),
+                      border: Border.all(
+                          color: const Color(0xFF10B981), width: 2.5),
                     ),
                   ),
-                  Container(width: 1.5, height: 28, color: const Color(0xFFE2E8F0)),
-                  const Icon(Icons.location_on, size: 14, color: Color(0xFFEF4444)),
+                  Container(
+                      width: 1.5, height: 28, color: const Color(0xFFE2E8F0)),
+                  const Icon(Icons.location_on,
+                      size: 14, color: Color(0xFFEF4444)),
                 ],
               ),
               const SizedBox(width: 14),
@@ -270,9 +376,21 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(widget.pickup, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(widget.pickup,
+                        style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF0F172A)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 20),
-                    Text(widget.destination, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(widget.destination,
+                        style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF0F172A)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
                   ],
                 ),
               ),
@@ -287,7 +405,11 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
               const SizedBox(width: 12),
               _infoChip(Icons.people_rounded, '${widget.totalSeats} seats'),
               const Spacer(),
-              Text('₹${widget.pricePerSeat.toInt()}/seat', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: const Color(0xFF10B981))),
+              Text('₹${widget.pricePerSeat.toInt()}/seat',
+                  style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF10B981))),
             ],
           ),
         ],
@@ -307,7 +429,11 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
         children: [
           Icon(icon, size: 14, color: const Color(0xFF64748B)),
           const SizedBox(width: 6),
-          Text(text, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF64748B))),
+          Text(text,
+              style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF64748B))),
         ],
       ),
     );
@@ -318,7 +444,8 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
       stream: _firestoreService.getBookingsForRide(widget.rideId),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: Padding(
+          return const Center(
+              child: Padding(
             padding: EdgeInsets.all(32),
             child: CircularProgressIndicator(color: Color(0xFF2563EB)),
           ));
@@ -339,16 +466,25 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
               children: [
                 Container(
                   padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF1F5F9),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.people_outline_rounded, size: 32, color: Color(0xFF94A3B8)),
+                  child: const Icon(Icons.people_outline_rounded,
+                      size: 32, color: Color(0xFF94A3B8)),
                 ),
                 const SizedBox(height: 16),
-                Text('Waiting for passengers...', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: const Color(0xFF64748B))),
+                Text('Waiting for passengers...',
+                    style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF64748B))),
                 const SizedBox(height: 4),
-                Text('You\'ll see live updates here when someone books', style: GoogleFonts.inter(fontSize: 13, color: const Color(0xFF94A3B8)), textAlign: TextAlign.center),
+                Text(
+                    'You\'ll see live updates here when someone books',
+                    style: GoogleFonts.inter(
+                        fontSize: 13, color: const Color(0xFF94A3B8)),
+                    textAlign: TextAlign.center),
               ],
             ),
           );
@@ -357,18 +493,23 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
         return Column(
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
                 color: const Color(0xFFECFDF5),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.people_rounded, size: 18, color: Color(0xFF10B981)),
+                  const Icon(Icons.people_rounded,
+                      size: 18, color: Color(0xFF10B981)),
                   const SizedBox(width: 8),
                   Text(
                     '${bookings.length} passenger${bookings.length > 1 ? 's' : ''} joined',
-                    style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: const Color(0xFF059669)),
+                    style: GoogleFonts.inter(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF059669)),
                   ),
                 ],
               ),
@@ -396,8 +537,8 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isVerified 
-                  ? const Color(0xFF10B981).withValues(alpha: 0.3) 
+              color: isVerified
+                  ? const Color(0xFF10B981).withValues(alpha: 0.3)
                   : const Color(0xFFF1F5F9),
               width: 1.5,
             ),
@@ -406,8 +547,15 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
             children: [
               CircleAvatar(
                 radius: 22,
-                backgroundImage: rider?.profilePhotoUrl != null ? NetworkImage(rider!.profilePhotoUrl!) : null,
-                child: rider?.profilePhotoUrl == null ? const Icon(Icons.person, size: 20) : null,
+                backgroundColor: const Color(0xFFEFF6FF),
+                child: Text(
+                  rider?.initials ?? '?',
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                    color: const Color(0xFF2563EB),
+                  ),
+                ),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -416,18 +564,23 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
                   children: [
                     Text(
                       rider?.name ?? 'Passenger',
-                      style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A)),
+                      style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: const Color(0xFF0F172A)),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       DateFormat('hh:mm a').format(booking.createdAt),
-                      style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF94A3B8)),
+                      style: GoogleFonts.inter(
+                          fontSize: 12, color: const Color(0xFF94A3B8)),
                     ),
                   ],
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: isVerified
                       ? const Color(0xFFECFDF5)
@@ -440,17 +593,33 @@ class _DriverActiveRideScreenState extends State<DriverActiveRideScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      isVerified ? Icons.verified_rounded : isConfirmed ? Icons.check_circle_outline : Icons.access_time,
+                      isVerified
+                          ? Icons.verified_rounded
+                          : isConfirmed
+                              ? Icons.check_circle_outline
+                              : Icons.access_time,
                       size: 14,
-                      color: isVerified ? const Color(0xFF10B981) : isConfirmed ? const Color(0xFF2563EB) : const Color(0xFFF59E0B),
+                      color: isVerified
+                          ? const Color(0xFF10B981)
+                          : isConfirmed
+                              ? const Color(0xFF2563EB)
+                              : const Color(0xFFF59E0B),
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      isVerified ? 'Boarded' : isConfirmed ? 'Confirmed' : 'Pending',
+                      isVerified
+                          ? 'Boarded'
+                          : isConfirmed
+                              ? 'Confirmed'
+                              : 'Pending',
                       style: GoogleFonts.inter(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: isVerified ? const Color(0xFF10B981) : isConfirmed ? const Color(0xFF2563EB) : const Color(0xFFF59E0B),
+                        color: isVerified
+                            ? const Color(0xFF10B981)
+                            : isConfirmed
+                                ? const Color(0xFF2563EB)
+                                : const Color(0xFFF59E0B),
                       ),
                     ),
                   ],

@@ -1,34 +1,28 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../widgets/auth_bottom_sheet.dart';
 import '../models/user_model.dart';
+import '../screens/profile_setup_screen.dart';
 
 class AuthService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
   static UserModel? _cachedProfile;
 
-  /// Demo mode: when true, skip Firebase phone auth entirely
-  static const bool demoMode = true;
-
-  /// Tracks whether the user is "logged in" in demo mode
-  static bool _demoLoggedIn = false;
-  static String _demoPhone = '';
+  // ── Stored auth state for OTP verification ──
+  static String? _activeVerificationId;
+  static int? _activeResendToken;
 
   static User? get currentUser => _auth.currentUser;
-  static bool get isLoggedIn => demoMode ? _demoLoggedIn : currentUser != null;
-  
-  /// Returns the current user's ID (works in both demo and real mode)
-  static String get userId {
-    if (demoMode) return _cachedProfile?.id ?? '';
-    return currentUser?.uid ?? '';
-  }
-  
-  static String? get phoneNumber =>
-      demoMode ? (_demoLoggedIn ? '+91$_demoPhone' : null) : currentUser?.phoneNumber;
+  static bool get isLoggedIn => currentUser != null;
+
+  /// Returns the current user's UID
+  static String get userId => currentUser?.uid ?? '';
+
+  static String? get phoneNumber => currentUser?.phoneNumber;
   static UserModel? get cachedUserProfile => _cachedProfile;
   static String get userGender => _cachedProfile?.gender ?? 'Unspecified';
   static bool get isStudent => _cachedProfile?.isStudent ?? false;
@@ -36,12 +30,18 @@ class AuthService {
   static double get walletBalance => _cachedProfile?.walletBalance ?? 0.0;
   static double get co2Saved => _cachedProfile?.co2Saved ?? 0.0;
   static double get totalMoneySaved => _cachedProfile?.totalMoneySaved ?? 0.0;
+  static int get ridesCompleted => _cachedProfile?.ridesCompleted ?? 0;
   static String get fullName =>
       _cachedProfile?.name ?? currentUser?.displayName ?? 'Commuter';
 
   /// Returns true if the user is natively logged in or successfully completes the flow.
   static Future<bool> requireLogin(BuildContext context) async {
-    if (isLoggedIn) return true;
+    if (isLoggedIn) {
+      if (fullName == 'New User') {
+        await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileSetupScreen()));
+      }
+      return true;
+    }
 
     final didLogin = await showModalBottomSheet<bool>(
       context: context,
@@ -52,154 +52,215 @@ class AuthService {
 
     if (didLogin == true) {
       await loadCurrentUserProfile(forceRefresh: true);
+      if (fullName == 'New User') {
+        await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileSetupScreen()));
+      }
       return true;
     }
 
     return false;
   }
 
-  static final List<Map<String, String>> _demoPersonas = [
-    {'name': 'Aarav Sharma', 'gender': 'Male', 'college': 'IIT Bombay'},
-    {'name': 'Priya Patel', 'gender': 'Female', 'college': 'NMIMS Mumbai'},
-    {'name': 'Rohan Gupta', 'gender': 'Male', 'college': 'VJTI Mumbai'},
-    {'name': 'Neha Singh', 'gender': 'Female', 'college': 'SPIT Mumbai'},
-    {'name': 'Aditya Verma', 'gender': 'Male', 'college': 'Thakur College'},
-    {'name': 'Kavya Desai', 'gender': 'Female', 'college': 'Mithibai College'},
-    {'name': 'Ishaan Kumar', 'gender': 'Male', 'college': 'K.J. Somaiya'},
-    {'name': 'Ananya Reddy', 'gender': 'Female', 'college': 'St. Xavier\'s College'},
-    {'name': 'Aryan Joshi', 'gender': 'Male', 'college': 'Ruia College'},
-    {'name': 'Diya Shah', 'gender': 'Female', 'college': 'HR College'},
-    {'name': 'Kabir Das', 'gender': 'Male', 'college': 'D.G. Ruparel'},
-    {'name': 'Sanya Mehta', 'gender': 'Female', 'college': 'Jai Hind College'},
-    {'name': 'Arjun Nair', 'gender': 'Male', 'college': 'R.A. Podar'},
-    {'name': 'Tara Iyer', 'gender': 'Female', 'college': 'KC College'},
-    {'name': 'Dev Kapoor', 'gender': 'Male', 'college': 'SNDT University'},
-  ];
-
-  /// Demo login — immediately "logs in" with the given phone number
-  static Future<void> demoLogin(String phone) async {
-    _demoPhone = phone;
-    _demoLoggedIn = true;
-
-    // Use phone number directly as ID (hashCode is inconsistent across platforms)
-    final docId = 'demo_$phone';
-
-    // Consistently pick a persona based on the phone number
-    int sum = 0;
-    for (int i = 0; i < phone.length; i++) {
-        sum += int.tryParse(phone[i]) ?? 0;
-    }
-    final persona = _demoPersonas[sum % _demoPersonas.length];
+  /// Updates the user's name and gender in Firestore
+  static Future<void> updateUserProfile({required String name, required String gender}) async {
+    final user = currentUser;
+    if (user == null) return;
     
-    // Make the name explicitly unique by appending last 4 digits of phone
-    final String last4 = phone.length >= 4 ? phone.substring(phone.length - 4) : phone;
-    final String uniqueName = '${persona['name']} ($last4)';
-
-    // Create a demo profile
-    _cachedProfile = UserModel(
-      id: docId,
-      name: uniqueName,
-      phoneNumber: '+91$phone',
-      gender: persona['gender']!,
-      collegeOrCompany: persona['college']!,
-      isStudent: true, // Demo accounts have logic verified
-      isAadharVerified: true,
-      walletBalance: 150.0, // Give demo accounts some initial balance
-      createdAt: DateTime.now(),
-    );
-
-    // Try to persist to Firestore if possible (non-blocking)
-    try {
-      final doc = await _db.collection('users').doc(docId).get();
-      if (doc.exists) {
-        _cachedProfile = UserModel.fromMap(doc.data()!, doc.id);
-      } else {
-        await _db.collection('users').doc(docId).set(_cachedProfile!.toMap());
-      }
-    } catch (_) {
-      // Firestore may not be available, that's fine for demo
+    await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+      'name': name,
+      'gender': gender,
+    });
+    
+    if (_cachedProfile != null) {
+      _cachedProfile = _cachedProfile!.copyWith(name: name, gender: gender);
     }
   }
 
+  /// ──────────────────────────────────────────────────────────
+  /// PHONE VERIFICATION — FIXED for reliable OTP handling
+  /// ──────────────────────────────────────────────────────────
+  ///
+  /// Key fixes:
+  /// 1. Store verificationId in a static field — ensures EXACT same ID is
+  ///    used during codeSent and signInWithOtp (no session mismatch).
+  /// 2. Store forceResendingToken for reliable resend.
+  /// 3. Pass forceResendingToken on resend to avoid new reCAPTCHA.
+  /// 4. Handle web reCAPTCHA via auth settings.
   static Future<void> verifyPhone({
     required String phone,
     required Function(String verificationId) onCodeSent,
     required Function(FirebaseAuthException e) onError,
+    Function()? onVerificationCompleted,
+    bool isResend = false,
   }) async {
-    await _auth.verifyPhoneNumber(
-      phoneNumber: '+91$phone',
-      verificationCompleted: (PhoneAuthCredential credential) async {
-        final userCredential = await _auth.signInWithCredential(credential);
-        if (userCredential.user != null) {
-          await _ensureUserProfile(userCredential.user!);
-          await loadCurrentUserProfile(forceRefresh: true);
-        }
-      },
-      verificationFailed: onError,
-      codeSent: (String verificationId, int? resendToken) {
-        onCodeSent(verificationId);
-      },
-      codeAutoRetrievalTimeout: (String verificationId) {},
-    );
+    final String fullPhone = '+91$phone';
+    debugPrint('📱 AuthService.verifyPhone: $fullPhone (resend=$isResend)');
+
+    // Use stored resend token only when resending
+    final int? resendToken = isResend ? _activeResendToken : null;
+
+    try {
+      await _auth.verifyPhoneNumber(
+        phoneNumber: fullPhone,
+        forceResendingToken: resendToken,
+        timeout: const Duration(seconds: 120),
+
+        // ── AUTO VERIFICATION (Android only) ──
+        // Firebase auto-reads SMS and signs in without manual OTP entry
+        verificationCompleted: (PhoneAuthCredential credential) async {
+          debugPrint('✅ Auto-verification completed');
+          try {
+            final userCredential = await _auth.signInWithCredential(credential);
+            if (userCredential.user != null) {
+              await _ensureUserProfile(userCredential.user!);
+              await loadCurrentUserProfile(forceRefresh: true);
+              onVerificationCompleted?.call();
+            }
+          } catch (e) {
+            debugPrint('⚠️ Auto-verification sign-in error: $e');
+          }
+        },
+
+        // ── VERIFICATION FAILED ──
+        verificationFailed: (FirebaseAuthException e) {
+          debugPrint('❌ Verification failed: ${e.code} — ${e.message}');
+          onError(e);
+        },
+
+        // ── CODE SENT ──
+        // CRITICAL: Store verificationId and resendToken for later use
+        codeSent: (String verificationId, int? forceResendingToken) {
+          debugPrint('📩 Code sent. verificationId=${verificationId.substring(0, 10)}..., resendToken=$forceResendingToken');
+
+          // Store in static fields — these persist across widget rebuilds
+          _activeVerificationId = verificationId;
+          _activeResendToken = forceResendingToken;
+
+          // Notify the UI
+          onCodeSent(verificationId);
+        },
+
+        // ── AUTO RETRIEVAL TIMEOUT ──
+        codeAutoRetrievalTimeout: (String verificationId) {
+          debugPrint('⏰ Auto-retrieval timeout. verificationId=${verificationId.substring(0, 10)}...');
+          // Update verification ID in case it changed
+          _activeVerificationId = verificationId;
+        },
+      );
+    } catch (e) {
+      debugPrint('❌ verifyPhoneNumber threw: $e');
+      if (e is FirebaseAuthException) {
+        onError(e);
+      } else {
+        onError(FirebaseAuthException(
+          code: 'unknown',
+          message: e.toString(),
+        ));
+      }
+    }
   }
 
+  /// ──────────────────────────────────────────────────────────
+  /// SIGN IN WITH OTP — FIXED for session mismatch prevention
+  /// ──────────────────────────────────────────────────────────
+  ///
+  /// Uses the stored _activeVerificationId to guarantee the EXACT same
+  /// verification session is used. This prevents "invalid-verification-id"
+  /// and "session-expired" errors.
   static Future<UserCredential> signInWithOtp(String verificationId, String smsCode) async {
-    PhoneAuthCredential credential = PhoneAuthProvider.credential(
-      verificationId: verificationId,
-      smsCode: smsCode,
-    );
-    UserCredential userCredential = await _auth.signInWithCredential(credential);
-    
-    // Create/Update user profile in Firestore
-    if (userCredential.user != null) {
-      await _ensureUserProfile(userCredential.user!);
-      await loadCurrentUserProfile(forceRefresh: true);
+    // Use the stored verification ID as primary source of truth
+    final String effectiveVid = _activeVerificationId ?? verificationId;
+    debugPrint('🔑 signInWithOtp: using verificationId=${effectiveVid.substring(0, 10)}..., code=$smsCode');
+
+    try {
+      PhoneAuthCredential credential = PhoneAuthProvider.credential(
+        verificationId: effectiveVid,
+        smsCode: smsCode,
+      );
+
+      UserCredential userCredential = await _auth.signInWithCredential(credential);
+
+      // Create/Update user profile in Firestore
+      if (userCredential.user != null) {
+        await _ensureUserProfile(userCredential.user!);
+        await loadCurrentUserProfile(forceRefresh: true);
+      }
+
+      // Clear stored auth state after successful sign-in
+      _activeVerificationId = null;
+      _activeResendToken = null;
+
+      debugPrint('✅ OTP sign-in successful: uid=${userCredential.user?.uid}');
+      return userCredential;
+    } on FirebaseAuthException catch (e) {
+      debugPrint('❌ OTP sign-in failed: ${e.code} — ${e.message}');
+
+      // Map Firebase error codes to user-friendly messages
+      String userMessage;
+      switch (e.code) {
+        case 'invalid-verification-code':
+          userMessage = 'The OTP you entered is incorrect. Please check and try again.';
+          break;
+        case 'invalid-verification-id':
+        case 'session-expired':
+          userMessage = 'Your verification session has expired. Please request a new OTP.';
+          // Clear stale session
+          _activeVerificationId = null;
+          _activeResendToken = null;
+          break;
+        case 'too-many-requests':
+          userMessage = 'Too many attempts. Please wait a few minutes and try again.';
+          break;
+        case 'quota-exceeded':
+          userMessage = 'SMS quota exceeded. Please try again later.';
+          break;
+        default:
+          userMessage = 'Verification failed: ${e.message ?? e.code}';
+      }
+
+      throw FirebaseAuthException(code: e.code, message: userMessage);
     }
-    
-    return userCredential;
   }
 
   static Future<void> _ensureUserProfile(User user) async {
     String? fcmToken;
     try {
-      fcmToken = await FirebaseMessaging.instance.getToken();
-    } catch (_) {
       // FCM might not be available on web
+      if (!kIsWeb) {
+        fcmToken = await FirebaseMessaging.instance.getToken();
+      }
+    } catch (e) {
+      debugPrint('ℹ️ FCM token not available: $e');
     }
-    final doc = await _db.collection('users').doc(user.uid).get();
-    
-    if (!doc.exists) {
-      final newUser = UserModel(
-        id: user.uid,
-        name: user.displayName ?? 'New User',
-        phoneNumber: user.phoneNumber ?? '',
-        collegeOrCompany: 'Not Set',
-        createdAt: DateTime.now(),
-      );
-      final data = newUser.toMap();
-      data['fcm_token'] = fcmToken;
-      await _db.collection('users').doc(user.uid).set(data);
-    } else {
-      await _db.collection('users').doc(user.uid).update({'fcm_token': fcmToken});
+
+    try {
+      final doc = await _db.collection('users').doc(user.uid).get();
+
+      if (!doc.exists) {
+        final newUser = UserModel(
+          id: user.uid,
+          name: user.displayName ?? 'New User',
+          phoneNumber: user.phoneNumber ?? '',
+          collegeOrCompany: 'Not Set',
+          createdAt: DateTime.now(),
+        );
+        final data = newUser.toMap();
+        if (fcmToken != null) data['fcm_token'] = fcmToken;
+        await _db.collection('users').doc(user.uid).set(data);
+        debugPrint('✅ New user profile created: ${user.uid}');
+      } else {
+        final updateData = <String, dynamic>{};
+        if (fcmToken != null) updateData['fcm_token'] = fcmToken;
+        if (updateData.isNotEmpty) {
+          await _db.collection('users').doc(user.uid).update(updateData);
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error ensuring user profile: $e');
     }
   }
 
   static Future<UserModel?> loadCurrentUserProfile({bool forceRefresh = false}) async {
-    if (demoMode) {
-      if (_cachedProfile != null && forceRefresh) {
-        // Try to load fresh data from Firestore in demo mode
-        try {
-          final doc = await _db.collection('users').doc(_cachedProfile!.id).get();
-          if (doc.exists) {
-            _cachedProfile = UserModel.fromMap(doc.data()!, doc.id);
-          }
-        } catch (_) {
-          // Firestore may not be available, use cached
-        }
-      }
-      return _cachedProfile;
-    }
-
     final user = currentUser;
     if (user == null) {
       _cachedProfile = null;
@@ -210,43 +271,46 @@ class AuthService {
       return _cachedProfile;
     }
 
-    final profile = await getUserProfile(user.uid);
-    if (profile != null) {
-      _cachedProfile = profile;
-      return profile;
-    }
+    try {
+      final profile = await getUserProfile(user.uid);
+      if (profile != null) {
+        _cachedProfile = profile;
+        return profile;
+      }
 
-    await _ensureUserProfile(user);
-    final createdProfile = await getUserProfile(user.uid);
-    _cachedProfile = createdProfile;
-    return createdProfile;
+      await _ensureUserProfile(user);
+      final createdProfile = await getUserProfile(user.uid);
+      _cachedProfile = createdProfile;
+      return createdProfile;
+    } catch (e) {
+      debugPrint('⚠️ Error loading user profile: $e');
+      return _cachedProfile;
+    }
   }
 
   static Future<UserModel?> getUserProfile(String uid) async {
-    final doc = await _db.collection('users').doc(uid).get();
-    if (doc.exists) {
-      final profile = UserModel.fromMap(doc.data()!, doc.id);
-      
-      // ONLY update the cache if we are intentionally fetching the CURRENT user's profile
-      if (!demoMode && currentUser?.uid == uid) {
-        _cachedProfile = profile;
-      } else if (demoMode && _cachedProfile?.id == uid) {
-        _cachedProfile = profile;
+    try {
+      final doc = await _db.collection('users').doc(uid).get();
+      if (doc.exists) {
+        final profile = UserModel.fromMap(doc.data()!, doc.id);
+        if (currentUser?.uid == uid) {
+          _cachedProfile = profile;
+        }
+        return profile;
       }
-      
-      return profile;
+    } catch (e) {
+      debugPrint('⚠️ Error fetching user profile: $e');
     }
     return null;
   }
 
   static Future<void> updateProfile(UserModel user) async {
     try {
-      // Use set with merge to handle demo users that may not have a doc yet
       await _db.collection('users').doc(user.id).set(user.toMap(), SetOptions(merge: true));
-    } catch (_) {
-      // Firestore may fail for demo users, just update cache
+    } catch (e) {
+      debugPrint('⚠️ Error updating profile: $e');
     }
-    if (demoMode || currentUser?.uid == user.id) {
+    if (currentUser?.uid == user.id) {
       _cachedProfile = user;
     }
   }
@@ -290,11 +354,8 @@ class AuthService {
 
   static Future<void> logout() async {
     _cachedProfile = null;
-    if (demoMode) {
-      _demoLoggedIn = false;
-      _demoPhone = '';
-    } else {
-      await _auth.signOut();
-    }
+    _activeVerificationId = null;
+    _activeResendToken = null;
+    await _auth.signOut();
   }
 }

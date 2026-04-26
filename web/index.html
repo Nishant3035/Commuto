@@ -1,26 +1,18 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
-  <base href="$FLUTTER_BASE_HREF">
+  <base href="/">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="Commuto - Share rides. Save money. Go green. The smart ride-sharing platform for students.">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#1D4ED8">
+
+  <!-- Prevent stale cache on reload -->
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -38,6 +30,9 @@
   <!-- Preconnect to Google Fonts for faster loading -->
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <!-- Google Maps JavaScript API — loaded early in head with places library -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCVpIx5LWUzmA8MKu12S1jwwi_RG5MaLjw&libraries=places&callback=Function.prototype" async defer></script>
 
   <style>
     /* ===== Premium Loading Screen ===== */
@@ -197,6 +192,29 @@
         setTimeout(function() { loader.remove(); }, 600);
       }
     });
+
+    // Fallback: if Flutter hasn't loaded after 15s, try reloading once
+    setTimeout(function() {
+      var loader = document.getElementById('loading-screen');
+      if (loader && !loader.classList.contains('fade-out')) {
+        // Only auto-reload once to prevent infinite loop
+        var reloaded = sessionStorage.getItem('commuto_reloaded');
+        if (!reloaded) {
+          sessionStorage.setItem('commuto_reloaded', 'true');
+          location.reload();
+        } else {
+          // Show a friendly error
+          var tagline = document.querySelector('.brand-tagline');
+          if (tagline) {
+            tagline.textContent = 'Taking longer than usual... Please refresh the page.';
+            tagline.style.color = 'rgba(255,255,255,0.8)';
+          }
+        }
+      } else {
+        // Clear the reload flag on successful load
+        sessionStorage.removeItem('commuto_reloaded');
+      }
+    }, 15000);
   </script>
 </body>
 </html>

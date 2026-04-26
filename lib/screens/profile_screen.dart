@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../widgets/aadhar_verification_bottom_sheet.dart';
 import '../widgets/wallet_topup_bottom_sheet.dart';
+import 'activity_screen.dart';
+import 'emergency_contacts_screen.dart';
 import 'ride_history_screen.dart';
 import 'verification_screen.dart';
 
@@ -66,7 +69,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       backgroundColor: Colors.transparent,
       builder: (sheetContext) => WalletTopupBottomSheet(
         onTopup: (amount) async {
-          // Use the profile screen's context, not the bottom sheet's
           try {
             await AuthService.topUpWallet(amount);
           } catch (e) {
@@ -125,6 +127,143 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (verified == true && mounted) {
       await _refreshProfile();
     }
+  }
+
+  void _openWhatsAppSupport() async {
+    final url = Uri.parse('https://wa.me/919876543210?text=Hi%20Commuto%20Support%2C%20I%20need%20help%20with...');
+    try {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open WhatsApp', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+            backgroundColor: const Color(0xFFEF4444),
+          ),
+        );
+      }
+    }
+  }
+
+  void _openEmailSupport() async {
+    final url = Uri.parse('mailto:support@commuto.app?subject=Commuto%20Support%20Request');
+    try {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open email', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+            backgroundColor: const Color(0xFFEF4444),
+          ),
+        );
+      }
+    }
+  }
+
+  void _showHelpOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(28),
+            topRight: Radius.circular(28),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'How can we help?',
+              style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A)),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Choose your preferred support channel',
+              style: GoogleFonts.inter(fontSize: 14, color: const Color(0xFF64748B)),
+            ),
+            const SizedBox(height: 24),
+            _buildSupportOption(
+              icon: Icons.chat_rounded,
+              title: 'WhatsApp Support',
+              subtitle: 'Quick responses, usually within minutes',
+              color: const Color(0xFF25D366),
+              onTap: () {
+                Navigator.pop(context);
+                _openWhatsAppSupport();
+              },
+            ),
+            const SizedBox(height: 12),
+            _buildSupportOption(
+              icon: Icons.email_outlined,
+              title: 'Email Support',
+              subtitle: 'Detailed queries and feedback',
+              color: const Color(0xFF2563EB),
+              onTap: () {
+                Navigator.pop(context);
+                _openEmailSupport();
+              },
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSupportOption({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withValues(alpha: 0.15)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: const Color(0xFF0F172A))),
+                  Text(subtitle, style: GoogleFonts.inter(fontSize: 12, color: const Color(0xFF64748B))),
+                ],
+              ),
+            ),
+            Icon(Icons.arrow_forward_ios_rounded, size: 14, color: color),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -234,6 +373,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final co2Saved = profile?.co2Saved ?? AuthService.co2Saved;
     final totalMoneySaved =
         profile?.totalMoneySaved ?? AuthService.totalMoneySaved;
+    final ridesCompleted = profile?.ridesCompleted ?? AuthService.ridesCompleted;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -243,12 +383,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               Stack(
                 children: [
+                  // Avatar using initials
                   CircleAvatar(
                     radius: 44,
-                    backgroundColor: const Color(0xFFE2E8F0),
-                    backgroundImage: gender == 'Female'
-                        ? const NetworkImage('https://i.pravatar.cc/150?img=32')
-                        : const NetworkImage('https://i.pravatar.cc/150?img=11'),
+                    backgroundColor: gender == 'Female'
+                        ? const Color(0xFFFCE7F3)
+                        : const Color(0xFFEFF6FF),
+                    child: Text(
+                      profile?.initials ?? displayName[0].toUpperCase(),
+                      style: GoogleFonts.inter(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: gender == 'Female'
+                            ? const Color(0xFFDB2777)
+                            : const Color(0xFF2563EB),
+                      ),
+                    ),
                   ),
                   if (isAadharVerified)
                     Positioned(
@@ -292,23 +442,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        gender,
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: const Color(0xFF475569),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            gender,
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF475569),
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFECFDF5),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '$ridesCompleted rides',
+                            style: GoogleFonts.inter(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF059669),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -316,6 +489,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
           ),
           const SizedBox(height: 32),
+          // Wallet Card
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -379,6 +553,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           const SizedBox(height: 24),
+          // Impact Card
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
@@ -402,18 +577,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         letterSpacing: 0.5,
                       ),
                     ),
-                    const Text('Trees', style: TextStyle(fontSize: 16)),
+                    const Text('🌍', style: TextStyle(fontSize: 16)),
                   ],
                 ),
                 const SizedBox(height: 16),
                 Row(
                   children: [
-                    _buildImpactStat('${co2Saved.toInt()}kg', 'CO2 Saved'),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: VerticalDivider(),
-                    ),
-                    _buildImpactStat('14', 'Trees Worth'),
+                    _buildImpactStat('${co2Saved.toStringAsFixed(1)}kg', 'CO₂ Saved'),
+                    const SizedBox(width: 24),
+                    _buildImpactStat('${(co2Saved / 21).ceil()}', 'Trees Worth'),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -470,9 +642,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _buildActionItem(
               icon: Icons.shield_outlined,
               title: 'Verify Aadhar Identity',
-              subtitle: 'Mandatory for safe community gender matching',
-              color: const Color(0xFFEF4444),
-              onTap: _showAadharVerify,
+              subtitle: 'Coming Soon',
+              color: const Color(0xFF94A3B8), // gray out
+              onTap: () {
+                 ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Aadhar Verification is coming soon!')));
+              },
             )
           else
             _buildVerifiedBadge(
@@ -494,11 +668,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const Color(0xFF10B981),
             ),
           const SizedBox(height: 32),
+          _buildMenuTile(Icons.shield_rounded, 'Emergency Contacts', onTap: () {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const EmergencyContactsScreen()));
+          }),
           _buildMenuTile(Icons.history_rounded, 'Ride History', onTap: () {
             Navigator.push(context, MaterialPageRoute(builder: (_) => const RideHistoryScreen()));
           }),
-          _buildMenuTile(Icons.notifications_active_outlined, 'Notifications'),
-          _buildMenuTile(Icons.help_center_outlined, 'Help & Support'),
+          _buildMenuTile(Icons.notifications_active_outlined, 'Activity', onTap: () {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => const ActivityScreen()));
+          }),
+          _buildMenuTile(Icons.help_center_outlined, 'Help & Support', onTap: _showHelpOptions),
           const SizedBox(height: 48),
           SizedBox(
             width: double.infinity,
@@ -651,11 +830,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       ),
       trailing: const Icon(Icons.chevron_right, color: Color(0xFFCBD5E1)),
-      onTap: onTap ?? () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$title screen coming soon!')),
-        );
-      },
+      onTap: onTap,
     );
   }
 }

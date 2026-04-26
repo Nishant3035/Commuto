@@ -78,23 +78,22 @@ class _OfferRideScreenState extends State<OfferRideScreen>
   }
 
   Future<void> _pickLocation({required bool isPickup}) async {
-    final result = await Navigator.of(context).push<LocationResult>(
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
       MaterialPageRoute(
         builder: (context) => MapPickerScreen(
           title: isPickup ? 'Pickup Location' : 'Destination',
-          showCurrentLocation: isPickup,
-          initialPosition: isPickup ? _pickupLatLng : _destinationLatLng,
+          initialLocation: isPickup ? _pickupLatLng : _destinationLatLng,
         ),
       ),
     );
     if (result != null) {
       setState(() {
         if (isPickup) {
-          _pickupAddress = result.address;
-          _pickupLatLng = result.latLng;
+          _pickupAddress = result['name'] as String;
+          _pickupLatLng = LatLng(result['lat'] as double, result['lng'] as double);
         } else {
-          _destinationAddress = result.address;
-          _destinationLatLng = result.latLng;
+          _destinationAddress = result['name'] as String;
+          _destinationLatLng = LatLng(result['lat'] as double, result['lng'] as double);
         }
       });
       _calculateFare();
@@ -161,6 +160,8 @@ class _OfferRideScreenState extends State<OfferRideScreen>
       final ride = RideModel(
         id: '', // Will be assigned by Firestore
         driverId: AuthService.userId,
+        driverName: AuthService.fullName,
+        driverGender: AuthService.userGender,
         sourceName: _pickupAddress!,
         sourceLatLng: GeoPoint(_pickupLatLng!.latitude, _pickupLatLng!.longitude),
         destinationName: _destinationAddress!,
@@ -170,13 +171,24 @@ class _OfferRideScreenState extends State<OfferRideScreen>
         seatsAvailable: _seats - 1,
         pricePerSeat: _fareBreakdown!.totalPerPerson,
         status: RideStatus.active,
+        isWomenOnly: !_allowMales,
         createdAt: DateTime.now(),
       );
 
-      final rideId = await FirestoreService().createRide(ride);
+      final firestoreService = FirestoreService();
+      final rideId = await firestoreService.createRide(ride);
 
-      // Wait for the Cloud Function to generate the OTP
-      await Future.delayed(const Duration(seconds: 3));
+      // Create activity notification
+      await firestoreService.addActivity(
+        userId: AuthService.userId,
+        title: 'Ride Created',
+        body: 'Your ride from ${_pickupAddress!} to ${_destinationAddress!} is now live!',
+        type: 'ride_created',
+        rideId: rideId,
+      );
+
+      // Short delay for Firestore to propagate
+      await Future.delayed(const Duration(seconds: 1));
 
       if (mounted) {
         setState(() => _isLoading = false);
@@ -680,8 +692,8 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                         const SizedBox(height: 24),
                       ],
 
-                      // Girls Only Preference (Visible to females only)
-                      if (AuthService.userGender == 'Female') ...[
+                      // Girls Only Preference
+
                         _SectionLabel(label: 'CROWD PREFERENCE'),
                         const SizedBox(height: 10),
                         Container(
@@ -721,8 +733,7 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                             ],
                           ),
                         ),
-                        const SizedBox(height: 24),
-                      ],
+                      const SizedBox(height: 24),
 
                       // Notes section
                       _SectionLabel(label: 'NOTES (OPTIONAL)'),

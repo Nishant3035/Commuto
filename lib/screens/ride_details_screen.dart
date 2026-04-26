@@ -138,8 +138,8 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                       child: Row(
                         children: [
                           _buildPassengerAvatar(
-                            name: _driver?.name ?? 'Loading...',
-                            gender: 'Male', // Default or fetch from profile
+                            name: _driver?.name ?? widget.rideData.driverName,
+                            gender: _driver?.gender ?? widget.rideData.driverGender,
                             isDriver: true,
                             imageUrl: _driver?.profilePhotoUrl,
                           ),
@@ -148,7 +148,7 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                     ),
                     const SizedBox(height: 24),
                     
-                    // Metrics Row
+                    // Metrics Row — dynamic CO2 and verification
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 24),
                       child: Row(
@@ -159,7 +159,7 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                               iconColor: const Color(0xFF059669),
                               iconBgColor: const Color(0xFFD1FAE5),
                               title: 'CO₂ Saved',
-                              value: '3.1 kg',
+                              value: '${(distanceKm * 0.150).toStringAsFixed(1)} kg',
                               bgColor: const Color(0xFFF0FDF4),
                               textColor: const Color(0xFF059669),
                             ),
@@ -171,7 +171,7 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                               iconColor: const Color(0xFF2563EB),
                               iconBgColor: const Color(0xFFDBEAFE),
                               title: 'Status',
-                              value: 'Verified',
+                              value: (_driver?.isAadharVerified ?? false) ? 'Verified' : 'Unverified',
                               bgColor: const Color(0xFFF0F6FF),
                               textColor: const Color(0xFF2563EB),
                             ),

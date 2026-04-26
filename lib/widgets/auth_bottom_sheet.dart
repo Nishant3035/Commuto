@@ -20,8 +20,11 @@ class _AuthBottomSheetState extends State<AuthBottomSheet>
   final TextEditingController _phoneController = TextEditingController();
   String _enteredOtp = "";
 
+  // OTP field key for programmatic clear/reset
+  final GlobalKey<_OtpFieldWrapperState> _otpFieldKey = GlobalKey();
+
   Timer? _timer;
-  int _start = 30;
+  int _start = 60;
   bool _canResend = false;
 
   late AnimationController _sheetAnimController;
@@ -43,7 +46,7 @@ class _AuthBottomSheetState extends State<AuthBottomSheet>
 
   void _startTimer() {
     _canResend = false;
-    _start = 30;
+    _start = 60;
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_start == 0) {
@@ -59,12 +62,27 @@ class _AuthBottomSheetState extends State<AuthBottomSheet>
     });
   }
 
+  /// Go back from OTP mode to phone number entry
+  void _backToPhone() {
+    _timer?.cancel();
+    setState(() {
+      _isOtpMode = false;
+      _isLoading = false;
+      _errorText = null;
+      _verificationId = null;
+      _enteredOtp = '';
+      _canResend = false;
+      _start = 60;
+    });
+  }
+
   void _handleAction() async {
     setState(() {
       _errorText = null;
     });
 
     if (!_isOtpMode) {
+      // ── PHONE NUMBER MODE ──
       if (_phoneController.text.trim().length < 10) {
         setState(() {
           _errorText = 'Enter a valid 10-digit number';
@@ -72,30 +90,14 @@ class _AuthBottomSheetState extends State<AuthBottomSheet>
         return;
       }
 
-      // Demo mode: skip OTP, directly log in
-      if (AuthService.demoMode) {
-        setState(() => _isLoading = true);
-        try {
-          await AuthService.demoLogin(_phoneController.text.trim());
-          if (mounted) {
-            Navigator.pop(context, true);
-          }
-        } catch (e) {
-          setState(() {
-            _isLoading = false;
-            _errorText = 'Something went wrong. Please try again.';
-          });
-        }
-        return;
-      }
-
-      // Real Firebase OTP flow
       setState(() => _isLoading = true);
 
       try {
         await AuthService.verifyPhone(
           phone: _phoneController.text.trim(),
+          isResend: false, // First time — not a resend
           onCodeSent: (verificationId) {
+            if (!mounted) return;
             setState(() {
               _isLoading = false;
               _isOtpMode = true;
@@ -104,27 +106,38 @@ class _AuthBottomSheetState extends State<AuthBottomSheet>
             _startTimer();
           },
           onError: (e) {
+            if (!mounted) return;
             String errorMsg = e.message ?? 'Verification failed';
-            // Firebase Spark plan doesn't support phone auth
             if (errorMsg.contains('BILLING_NOT_ENABLED') ||
                 errorMsg.contains('billing')) {
               errorMsg =
                   'Phone verification requires Firebase Blaze plan. Please upgrade at console.firebase.google.com';
+            } else if (errorMsg.contains('too-many-requests')) {
+              errorMsg = 'Too many attempts. Please wait a few minutes.';
+            } else if (errorMsg.contains('invalid-phone-number')) {
+              errorMsg = 'Invalid phone number format. Please check and try again.';
             }
             setState(() {
               _isLoading = false;
               _errorText = errorMsg;
             });
           },
+          onVerificationCompleted: () {
+            // Auto-verification on Android
+            if (mounted) {
+              Navigator.pop(context, true);
+            }
+          },
         );
       } catch (e) {
+        if (!mounted) return;
         setState(() {
           _isLoading = false;
           _errorText = 'An error occurred. Please try again.';
         });
       }
     } else {
-      // OTP Verification Mode
+      // ── OTP VERIFICATION MODE ──
       if (_enteredOtp.length < 6) {
         setState(() {
           _errorText = 'Enter the 6-digit code';
@@ -135,19 +148,34 @@ class _AuthBottomSheetState extends State<AuthBottomSheet>
       setState(() => _isLoading = true);
 
       try {
+        // signInWithOtp uses the stored verificationId internally as fallback
         await AuthService.signInWithOtp(_verificationId!, _enteredOtp);
         if (mounted) {
           Navigator.pop(context, true);
         }
       } catch (e) {
+        // Check if sign-in actually succeeded despite the exception
+        if (AuthService.isLoggedIn) {
+          if (mounted) {
+            Navigator.pop(context, true);
+          }
+          return;
+        }
+
+        if (!mounted) return;
+
         String errorMsg = 'Invalid OTP. Please try again.';
         final errStr = e.toString().toLowerCase();
         if (errStr.contains('invalid-verification-code') ||
             errStr.contains('wrong')) {
           errorMsg = 'Wrong verification code. Please check and re-enter.';
         } else if (errStr.contains('session-expired') ||
-            errStr.contains('expired')) {
+            errStr.contains('expired') ||
+            errStr.contains('invalid-verification-id')) {
           errorMsg = 'Code expired. Please tap Resend to get a new code.';
+          // Enable resend immediately on session expiry
+          _timer?.cancel();
+          _canResend = true;
         } else if (errStr.contains('too-many-requests') ||
             errStr.contains('quota')) {
           errorMsg = 'Too many attempts. Please wait a few minutes.';
@@ -172,21 +200,44 @@ class _AuthBottomSheetState extends State<AuthBottomSheet>
     try {
       await AuthService.verifyPhone(
         phone: _phoneController.text.trim(),
+        isResend: true, // Use stored forceResendingToken
         onCodeSent: (verificationId) {
+          if (!mounted) return;
           setState(() {
             _isLoading = false;
             _verificationId = verificationId;
+            _errorText = null;
           });
           _startTimer();
+
+          // Show success feedback
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('New code sent!',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+              backgroundColor: const Color(0xFF10B981),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+              duration: const Duration(seconds: 2),
+            ),
+          );
         },
         onError: (e) {
+          if (!mounted) return;
           setState(() {
             _isLoading = false;
             _errorText = e.message ?? 'Failed to resend code';
           });
         },
+        onVerificationCompleted: () {
+          if (mounted) {
+            Navigator.pop(context, true);
+          }
+        },
       );
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
         _errorText = 'Failed to resend. Try again.';
@@ -204,7 +255,6 @@ class _AuthBottomSheetState extends State<AuthBottomSheet>
 
   @override
   Widget build(BuildContext context) {
-    // Determine bottom padding for keyboard
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return FadeTransition(
@@ -247,30 +297,51 @@ class _AuthBottomSheetState extends State<AuthBottomSheet>
             ),
             const SizedBox(height: 28),
 
-            // Icon badge
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF2563EB).withValues(alpha: 0.3),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
+            // Back button + Icon badge row
+            Row(
+              children: [
+                if (_isOtpMode)
+                  GestureDetector(
+                    onTap: _backToPhone,
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      margin: const EdgeInsets.only(right: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.arrow_back_rounded,
+                          color: Color(0xFF475569), size: 20),
+                    ),
                   ),
-                ],
-              ),
-              child: Icon(
-                _isOtpMode ? Icons.sms_outlined : Icons.phone_android_rounded,
-                color: Colors.white,
-                size: 26,
-              ),
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF2563EB), Color(0xFF1D4ED8)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF2563EB).withValues(alpha: 0.3),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    _isOtpMode
+                        ? Icons.sms_outlined
+                        : Icons.phone_android_rounded,
+                    color: Colors.white,
+                    size: 26,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 20),
 
@@ -290,9 +361,7 @@ class _AuthBottomSheetState extends State<AuthBottomSheet>
             Text(
               _isOtpMode
                   ? 'We sent a code to +91 ${_phoneController.text}'
-                  : AuthService.demoMode
-                      ? 'Enter your phone number to get started instantly.'
-                      : "We'll send you a 6-digit verification code to keep your account safe.",
+                  : "We'll send you a 6-digit verification code to keep your account safe.",
               style: GoogleFonts.inter(
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
@@ -376,6 +445,7 @@ class _AuthBottomSheetState extends State<AuthBottomSheet>
                                   color: const Color(0xFF94A3B8),
                                 ),
                               ),
+                              onSubmitted: (_) => _handleAction(),
                             ),
                           ),
                         ],
@@ -385,9 +455,9 @@ class _AuthBottomSheetState extends State<AuthBottomSheet>
                 ],
               )
             else
-              // New Individual Box OTP Input
-              OtpField(
-                length: 6,
+              // OTP Input — use a fresh key to force rebuild on resend
+              _OtpFieldWrapper(
+                key: _otpFieldKey,
                 hasError: _errorText != null,
                 onChanged: (val) {
                   _enteredOtp = val;
@@ -405,7 +475,7 @@ class _AuthBottomSheetState extends State<AuthBottomSheet>
                 child: Center(
                   child: _canResend
                       ? TextButton(
-                          onPressed: _resendCode,
+                          onPressed: _isLoading ? null : _resendCode,
                           style: TextButton.styleFrom(
                             foregroundColor: const Color(0xFF1D4ED8),
                           ),
@@ -502,11 +572,7 @@ class _AuthBottomSheetState extends State<AuthBottomSheet>
                         ),
                       )
                     : Text(
-                        _isOtpMode
-                            ? 'Verify'
-                            : AuthService.demoMode
-                                ? 'Continue'
-                                : 'Send Code',
+                        _isOtpMode ? 'Verify' : 'Send Code',
                         style: GoogleFonts.inter(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
@@ -515,41 +581,45 @@ class _AuthBottomSheetState extends State<AuthBottomSheet>
                       ),
               ),
             ),
-
-            if (AuthService.demoMode && !_isOtpMode)
-              Padding(
-                padding: const EdgeInsets.only(top: 16),
-                child: Center(
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0FDF4),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFBBF7D0)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.info_outline,
-                            color: Color(0xFF16A34A), size: 14),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Demo mode — no OTP needed',
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF16A34A),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Wrapper for OtpField that can be rebuilt on resend to clear fields
+class _OtpFieldWrapper extends StatefulWidget {
+  final bool hasError;
+  final Function(String) onChanged;
+  final Function(String) onCompleted;
+
+  const _OtpFieldWrapper({
+    super.key,
+    required this.hasError,
+    required this.onChanged,
+    required this.onCompleted,
+  });
+
+  @override
+  State<_OtpFieldWrapper> createState() => _OtpFieldWrapperState();
+}
+
+class _OtpFieldWrapperState extends State<_OtpFieldWrapper> {
+  Key _internalKey = UniqueKey();
+
+  void reset() {
+    setState(() => _internalKey = UniqueKey());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return OtpField(
+      key: _internalKey,
+      length: 6,
+      hasError: widget.hasError,
+      onChanged: widget.onChanged,
+      onCompleted: widget.onCompleted,
     );
   }
 }

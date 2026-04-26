@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../services/auth_service.dart';
 import '../models/user_model.dart';
 import 'main_navigation_screen.dart';
+import 'emergency_contacts_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -42,6 +43,12 @@ class _HomeScreenState extends State<HomeScreen> {
     if (AuthService.isLoggedIn) {
       displayName = _userProfile?.name ?? AuthService.fullName;
     }
+
+    final co2 = _userProfile?.co2Saved ?? AuthService.co2Saved;
+    final moneySaved = _userProfile?.totalMoneySaved ?? AuthService.totalMoneySaved;
+    final ridesCompleted = _userProfile?.ridesCompleted ?? AuthService.ridesCompleted;
+    // Calculate tree equivalent (1 tree absorbs ~21kg CO2/year)
+    final treesEquiv = (co2 / 21).ceil();
 
     return Container(
       decoration: const BoxDecoration(
@@ -129,7 +136,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(height: 14),
 
-              // Action Cards — premium glassmorphism style
+              // Action Cards
               _buildGlassActionCard(
                 context,
                 title: 'Find a Ride',
@@ -172,9 +179,82 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               ),
 
-              const SizedBox(height: 32),
+              const SizedBox(height: 24),
 
-              // Community Impact Card — dark premium
+              // Safety Quick Access
+              GestureDetector(
+                onTap: () {
+                  if (AuthService.isLoggedIn) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const EmergencyContactsScreen()),
+                    );
+                  } else {
+                    AuthService.requireLogin(context);
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        const Color(0xFFDC2626).withValues(alpha: 0.06),
+                        const Color(0xFFEF4444).withValues(alpha: 0.03),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: const Color(0xFFEF4444).withValues(alpha: 0.15),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFDC2626), Color(0xFFEF4444)],
+                          ),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(Icons.shield_rounded,
+                            color: Colors.white, size: 22),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Safety First',
+                              style: GoogleFonts.inter(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF0F172A),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Set up emergency contacts for SOS alerts',
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                color: const Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.arrow_forward_ios_rounded,
+                          size: 14, color: Color(0xFF94A3B8)),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Planet Impact Card — uses REAL user data
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(24),
@@ -213,7 +293,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             const SizedBox(width: 12),
                             Text(
-                              'Planet Impact',
+                              'Your Impact',
                               style: GoogleFonts.inter(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
@@ -222,47 +302,11 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ],
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF10B981)
-                                .withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: const Color(0xFF10B981)
-                                  .withValues(alpha: 0.3),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 6,
-                                height: 6,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF10B981),
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                'LIVE',
-                                style: GoogleFonts.inter(
-                                  fontSize: 10,
-                                  color: const Color(0xFF10B981),
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
                       ],
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      '14,320 kg',
+                      co2 > 0 ? '${co2.toStringAsFixed(1)} kg' : '0 kg',
                       style: GoogleFonts.inter(
                         fontSize: 36,
                         fontWeight: FontWeight.w900,
@@ -272,47 +316,49 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'CO₂ Emissions Prevented This Month',
+                      'CO₂ Emissions Prevented',
                       style: GoogleFonts.inter(
                         fontSize: 13,
                         fontWeight: FontWeight.w500,
                         color: Colors.white.withValues(alpha: 0.6),
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.06),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.08),
+                    if (treesEquiv > 0) ...[
+                      const SizedBox(height: 20),
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.06),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.08),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Text('🌳', style: TextStyle(fontSize: 18)),
+                            const SizedBox(width: 10),
+                            Text(
+                              'Equivalent to planting $treesEquiv tree${treesEquiv != 1 ? 's' : ''}',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white.withValues(alpha: 0.85),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text('🌳', style: TextStyle(fontSize: 18)),
-                          const SizedBox(width: 10),
-                          Text(
-                            'Equivalent to planting 680 trees',
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white.withValues(alpha: 0.85),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    ],
                   ],
                 ),
               ),
 
               const SizedBox(height: 20),
 
-              // Stats Row
-              _buildStatsRow(),
+              // Stats Row — Real data
+              _buildStatsRow(moneySaved, ridesCompleted),
 
               const SizedBox(height: 32),
             ],
@@ -351,7 +397,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         child: Row(
           children: [
-            // Gradient icon
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
@@ -411,7 +456,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildStatsRow() {
+  Widget _buildStatsRow(double moneySaved, int ridesCompleted) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -428,10 +473,19 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _buildQuickStat('₹12.4L', 'Total Saved', const Color(0xFF2563EB)),
+          _buildQuickStat(
+            moneySaved >= 1000
+                ? '₹${(moneySaved / 1000).toStringAsFixed(1)}K'
+                : '₹${moneySaved.toInt()}',
+            'Money Saved',
+            const Color(0xFF2563EB),
+          ),
           Container(width: 1, height: 36, color: const Color(0xFFF1F5F9)),
           _buildQuickStat(
-              '3,400+', 'Active Autos', const Color(0xFF10B981)),
+            '$ridesCompleted',
+            'Rides Completed',
+            const Color(0xFF10B981),
+          ),
         ],
       ),
     );

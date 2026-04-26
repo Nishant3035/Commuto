@@ -1,5 +1,21 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+class EmergencyContact {
+  final String name;
+  final String phone;
+
+  EmergencyContact({required this.name, required this.phone});
+
+  factory EmergencyContact.fromMap(Map<String, dynamic> map) {
+    return EmergencyContact(
+      name: map['name'] ?? '',
+      phone: map['phone'] ?? '',
+    );
+  }
+
+  Map<String, dynamic> toMap() => {'name': name, 'phone': phone};
+}
+
 class UserModel {
   final String id;
   final String name;
@@ -14,6 +30,8 @@ class UserModel {
   final double walletBalance;
   final double co2Saved;
   final double totalMoneySaved;
+  final int ridesCompleted;
+  final List<EmergencyContact> emergencyContacts;
   final DateTime createdAt;
 
   UserModel({
@@ -30,11 +48,14 @@ class UserModel {
     this.walletBalance = 0.0,
     this.co2Saved = 0.0,
     this.totalMoneySaved = 0.0,
+    this.ridesCompleted = 0,
+    this.emergencyContacts = const [],
     required this.createdAt,
   });
 
   factory UserModel.fromMap(Map<String, dynamic> map, String documentId) {
     final createdAt = map['created_at'];
+    final contactsList = map['emergency_contacts'] as List<dynamic>?;
 
     return UserModel(
       id: documentId,
@@ -50,6 +71,12 @@ class UserModel {
       walletBalance: (map['wallet_balance'] ?? 0.0).toDouble(),
       co2Saved: (map['co2_saved'] ?? 0.0).toDouble(),
       totalMoneySaved: (map['total_money_saved'] ?? 0.0).toDouble(),
+      ridesCompleted: map['rides_completed'] ?? 0,
+      emergencyContacts: contactsList != null
+          ? contactsList
+              .map((c) => EmergencyContact.fromMap(Map<String, dynamic>.from(c)))
+              .toList()
+          : [],
       createdAt: createdAt is Timestamp ? createdAt.toDate() : DateTime.now(),
     );
   }
@@ -67,6 +94,8 @@ class UserModel {
     double? walletBalance,
     double? co2Saved,
     double? totalMoneySaved,
+    int? ridesCompleted,
+    List<EmergencyContact>? emergencyContacts,
     DateTime? createdAt,
   }) {
     return UserModel(
@@ -83,8 +112,19 @@ class UserModel {
       walletBalance: walletBalance ?? this.walletBalance,
       co2Saved: co2Saved ?? this.co2Saved,
       totalMoneySaved: totalMoneySaved ?? this.totalMoneySaved,
+      ridesCompleted: ridesCompleted ?? this.ridesCompleted,
+      emergencyContacts: emergencyContacts ?? this.emergencyContacts,
       createdAt: createdAt ?? this.createdAt,
     );
+  }
+
+  /// Get user initials for avatar placeholder
+  String get initials {
+    final parts = name.trim().split(' ');
+    if (parts.length >= 2) {
+      return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+    }
+    return name.isNotEmpty ? name[0].toUpperCase() : '?';
   }
 
   Map<String, dynamic> toMap() {
@@ -101,6 +141,8 @@ class UserModel {
       'wallet_balance': walletBalance,
       'co2_saved': co2Saved,
       'total_money_saved': totalMoneySaved,
+      'rides_completed': ridesCompleted,
+      'emergency_contacts': emergencyContacts.map((c) => c.toMap()).toList(),
       'created_at': Timestamp.fromDate(createdAt),
     };
   }

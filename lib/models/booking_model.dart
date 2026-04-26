@@ -29,7 +29,9 @@ class BookingModel {
         orElse: () => BookingStatus.pending,
       ),
       otpVerified: map['otp_verified'] ?? false,
-      createdAt: (map['created_at'] as Timestamp).toDate(),
+      createdAt: map['created_at'] is Timestamp
+          ? (map['created_at'] as Timestamp).toDate()
+          : DateTime.now(),
     );
   }
 

@@ -46,9 +46,27 @@ class _OtpFieldState extends State<OtpField> {
 
   void _handleChanged(String value, int index) {
     if (value.length > 1) {
-      // Handle paste if needed, but for simplicity here we just take the last char
-      value = value.substring(value.length - 1);
-      _controllers[index].text = value;
+      // Handle paste/autofill
+      final chars = value.split('');
+      for (int i = 0; i < chars.length && index + i < widget.length; i++) {
+        _controllers[index + i].text = chars[i];
+        _code[index + i] = chars[i];
+      }
+      
+      if (widget.onChanged != null) {
+        widget.onChanged!(_code.join());
+      }
+      
+      int nextIndex = index + chars.length;
+      if (nextIndex < widget.length) {
+        _focusNodes[nextIndex].requestFocus();
+      } else {
+        _focusNodes[widget.length - 1].requestFocus();
+        if (_code.every((element) => element.isNotEmpty)) {
+          widget.onCompleted(_code.join());
+        }
+      }
+      return;
     }
 
     _code[index] = value;
@@ -111,7 +129,7 @@ class _OtpFieldState extends State<OtpField> {
               onChanged: (value) => _handleChanged(value, index),
               keyboardType: TextInputType.number,
               textAlign: TextAlign.center,
-              maxLength: 1,
+              autofillHints: const [AutofillHints.oneTimeCode],
               style: GoogleFonts.inter(
                 fontSize: 24,
                 fontWeight: FontWeight.w700,

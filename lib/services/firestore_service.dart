@@ -1,7 +1,6 @@
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import '../models/ride_model.dart';
 import '../models/booking_model.dart';
 import '../models/user_model.dart';
@@ -9,7 +8,6 @@ import '../utils/fare_calculator.dart';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
   // -- Users --
   Future<UserModel?> getUser(String userId) async {
@@ -27,19 +25,24 @@ class FirestoreService {
   // -- Rides --
 
   Future<String> createRide(RideModel ride) async {
-    final docRef = await _db.collection('rides').add(ride.toMap());
-    
-    // Generate 4-digit OTP and store in private sub-collection
-    final otp = (1000 + Random().nextInt(9000)).toString();
-    await docRef.collection('private').doc('data').set({
-      'otp_code': otp,
-      'created_at': FieldValue.serverTimestamp(),
-    });
-    
-    return docRef.id;
+    try {
+      final docRef = await _db.collection('rides').add(ride.toMap());
+
+      // Generate 4-digit OTP and store in private sub-collection
+      final otp = (1000 + Random().nextInt(9000)).toString();
+      await docRef.collection('private').doc('data').set({
+        'otp_code': otp,
+        'created_at': FieldValue.serverTimestamp(),
+      });
+
+      return docRef.id;
+    } catch (e) {
+      debugPrint('⚠️ Error creating ride: $e');
+      rethrow;
+    }
   }
 
-  /// End a ride — marks it as completed so it disappears from Find a Ride
+  /// End a ride — marks it as completed
   Future<void> endRide(String rideId) async {
     await _db.collection('rides').doc(rideId).update({
       'ride_status': 'completed',
@@ -47,7 +50,8 @@ class FirestoreService {
   }
 
   Stream<List<RideModel>> getActiveRides() {
-    return _db.collection('rides')
+    return _db
+        .collection('rides')
         .where('ride_status', isEqualTo: 'active')
         .orderBy('date_time', descending: false)
         .snapshots()
@@ -57,45 +61,62 @@ class FirestoreService {
             .toList());
   }
 
-  /// Search logic: Simplified query to avoid composite index requirements.
-  /// Date filtering and text matching are done locally.
+  /// Search rides with optional women-only filter
   Stream<List<RideModel>> searchRides({
     String? source,
     String? destination,
     DateTime? date,
+    bool womenOnly = false,
+    String? currentUserGender,
   }) {
-    // Simple query: just filter by status. Avoid compound inequalities.
-    return _db.collection('rides')
+    return _db
+        .collection('rides')
         .where('ride_status', isEqualTo: 'active')
         .snapshots()
         .map((snapshot) {
-      List<RideModel> rides = snapshot.docs.map((doc) => 
-        RideModel.fromMap(doc.data(), doc.id)
-      ).toList();
+      List<RideModel> rides = snapshot.docs
+          .map((doc) => RideModel.fromMap(doc.data(), doc.id))
+          .toList();
 
-      // Local filter: seats available
+      // Filter: seats available
       rides = rides.where((r) => r.seatsAvailable > 0).toList();
 
-      // Local filter: date (same day)
-      if (date != null) {
-        rides = rides.where((r) =>
-          r.dateTime.year == date.year &&
-          r.dateTime.month == date.month &&
-          r.dateTime.day == date.day
-        ).toList();
+      // Filter: hide women-only rides from male users
+      if (currentUserGender != null && currentUserGender != 'Female') {
+        rides = rides.where((r) => !r.isWomenOnly).toList();
       }
 
-      // Local fuzzy filter for names if provided
+      // Filter: show only women-only rides if toggle is on
+      if (womenOnly) {
+        rides = rides.where((r) => r.isWomenOnly).toList();
+      }
+
+      // Filter: date (same day)
+      if (date != null) {
+        rides = rides
+            .where((r) =>
+                r.dateTime.year == date.year &&
+                r.dateTime.month == date.month &&
+                r.dateTime.day == date.day)
+            .toList();
+      }
+
+      // Fuzzy filter for names
       if (source != null && source.isNotEmpty) {
-        rides = rides.where((r) => r.sourceName.toLowerCase().contains(source.toLowerCase())).toList();
+        rides = rides
+            .where((r) =>
+                r.sourceName.toLowerCase().contains(source.toLowerCase()))
+            .toList();
       }
       if (destination != null && destination.isNotEmpty) {
-        rides = rides.where((r) => r.destinationName.toLowerCase().contains(destination.toLowerCase())).toList();
+        rides = rides
+            .where((r) => r.destinationName
+                .toLowerCase()
+                .contains(destination.toLowerCase()))
+            .toList();
       }
 
-      // Sort by time
       rides.sort((a, b) => a.dateTime.compareTo(b.dateTime));
-
       return rides;
     });
   }
@@ -107,11 +128,15 @@ class FirestoreService {
     });
   }
 
-  /// Fetch OTP from the private sub-collection (only readable by driver)
+  /// Fetch OTP from the private sub-collection
   Future<String?> getRideOtp(String rideId) async {
     try {
-      final doc = await _db.collection('rides').doc(rideId)
-          .collection('private').doc('data').get();
+      final doc = await _db
+          .collection('rides')
+          .doc(rideId)
+          .collection('private')
+          .doc('data')
+          .get();
       if (doc.exists) {
         return doc.data()?['otp_code']?.toString();
       }
@@ -123,28 +148,52 @@ class FirestoreService {
 
   /// Get all rides offered by a specific driver
   Stream<List<RideModel>> getDriverRides(String driverId) {
-    return _db.collection('rides')
+    return _db
+        .collection('rides')
         .where('driver_id', isEqualTo: driverId)
         .snapshots()
         .map((snapshot) {
-          final rides = snapshot.docs
-              .map((doc) => RideModel.fromMap(doc.data(), doc.id))
-              .toList();
-          rides.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-          return rides;
-        });
+      final rides = snapshot.docs
+          .map((doc) => RideModel.fromMap(doc.data(), doc.id))
+          .toList();
+      rides.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return rides;
+    });
+  }
+
+  // -- Live Location --
+
+  /// Update driver's live location during an active ride
+  Future<void> updateRideLiveLocation(
+      String rideId, double lat, double lng) async {
+    await _db.collection('rides').doc(rideId).update({
+      'live_location': GeoPoint(lat, lng),
+    });
+  }
+
+  /// Stream driver's live location
+  Stream<GeoPoint?> streamRideLiveLocation(String rideId) {
+    return _db.collection('rides').doc(rideId).snapshots().map((doc) {
+      if (!doc.exists) return null;
+      return doc.data()?['live_location'] as GeoPoint?;
+    });
   }
 
   // -- Bookings --
 
   Future<String> createBooking(BookingModel booking) async {
-    // Check if user is already in the ride or is the driver (handled in join logic UI usually)
-    final docRef = await _db.collection('bookings').add(booking.toMap());
-    return docRef.id;
+    try {
+      final docRef = await _db.collection('bookings').add(booking.toMap());
+      return docRef.id;
+    } catch (e) {
+      debugPrint('⚠️ Error creating booking: $e');
+      rethrow;
+    }
   }
 
   Stream<List<BookingModel>> getBookingsForRide(String rideId) {
-    return _db.collection('bookings')
+    return _db
+        .collection('bookings')
         .where('ride_id', isEqualTo: rideId)
         .snapshots()
         .map((snapshot) => snapshot.docs
@@ -153,20 +202,20 @@ class FirestoreService {
   }
 
   Stream<List<BookingModel>> getMyBookings(String userId) {
-    return _db.collection('bookings')
+    return _db
+        .collection('bookings')
         .where('rider_id', isEqualTo: userId)
         .snapshots()
         .map((snapshot) {
-          final bookings = snapshot.docs
-              .map((doc) => BookingModel.fromMap(doc.data(), doc.id))
-              .toList();
-          bookings.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-          return bookings;
-        });
+      final bookings = snapshot.docs
+          .map((doc) => BookingModel.fromMap(doc.data(), doc.id))
+          .toList();
+      bookings.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return bookings;
+    });
   }
 
-  /// Verifies OTP directly against Firestore (no Cloud Functions needed)
-  /// Also transfers fare from rider's wallet to driver's wallet
+  /// Verifies OTP and transfers fare
   Future<bool> verifyOtp(String bookingId, String otp) async {
     try {
       final bookingRef = _db.collection('bookings').doc(bookingId);
@@ -175,16 +224,18 @@ class FirestoreService {
 
       final rideId = bookingDoc.data()!['ride_id'];
       final riderId = bookingDoc.data()!['rider_id'];
-      
-      // Read the private OTP
-      final privateDoc = await _db.collection('rides').doc(rideId)
-          .collection('private').doc('data').get();
+
+      final privateDoc = await _db
+          .collection('rides')
+          .doc(rideId)
+          .collection('private')
+          .doc('data')
+          .get();
       if (!privateDoc.exists) return false;
 
       final actualOtp = privateDoc.data()?['otp_code']?.toString();
-      if (otp != actualOtp) return false;
+      if (otp.trim() != actualOtp?.trim()) return false;
 
-      // OTP matches — update booking, decrement seats, and transfer fare
       final rideRef = _db.collection('rides').doc(rideId);
       final riderRef = _db.collection('users').doc(riderId);
 
@@ -200,66 +251,77 @@ class FirestoreService {
         final driverId = rideData['driver_id'] as String;
         final driverRef = _db.collection('users').doc(driverId);
 
-        // Read rider and driver wallets
         final riderDoc = await transaction.get(riderRef);
         final driverDoc = await transaction.get(driverRef);
 
-        final riderBalance = (riderDoc.data()?['wallet_balance'] ?? 0.0).toDouble();
-        final driverBalance = (driverDoc.data()?['wallet_balance'] ?? 0.0).toDouble();
-        
-        final riderMoneySaved = (riderDoc.data()?['total_money_saved'] ?? 0.0).toDouble();
-        final driverMoneySaved = (driverDoc.data()?['total_money_saved'] ?? 0.0).toDouble();
-        final riderCo2Saved = (riderDoc.data()?['co2_saved'] ?? 0.0).toDouble();
-        final driverCo2Saved = (driverDoc.data()?['co2_saved'] ?? 0.0).toDouble();
+        final riderBalance =
+            (riderDoc.data()?['wallet_balance'] ?? 0.0).toDouble();
+        final driverBalance =
+            (driverDoc.data()?['wallet_balance'] ?? 0.0).toDouble();
 
-        // Calculate savings using FareCalculator
-        final sourcePoint = rideData['source_latlng'] as GeoPoint;
-        final destPoint = rideData['destination_latlng'] as GeoPoint;
+        final riderMoneySaved =
+            (riderDoc.data()?['total_money_saved'] ?? 0.0).toDouble();
+        final driverMoneySaved =
+            (driverDoc.data()?['total_money_saved'] ?? 0.0).toDouble();
+        final riderCo2Saved =
+            (riderDoc.data()?['co2_saved'] ?? 0.0).toDouble();
+        final driverCo2Saved =
+            (driverDoc.data()?['co2_saved'] ?? 0.0).toDouble();
+        final riderRides =
+            (riderDoc.data()?['rides_completed'] ?? 0) as int;
+        final driverRides =
+            (driverDoc.data()?['rides_completed'] ?? 0) as int;
+
+        final sourceGeo = rideData['source_latlng'];
+        final destGeo = rideData['destination_latlng'];
+        final sourcePoint = sourceGeo is GeoPoint ? sourceGeo : const GeoPoint(19.0760, 72.8777);
+        final destPoint = destGeo is GeoPoint ? destGeo : const GeoPoint(19.0760, 72.8777);
         final distanceKm = FareCalculator.calculateDistance(
-          sourcePoint.latitude, sourcePoint.longitude,
-          destPoint.latitude, destPoint.longitude,
+          sourcePoint.latitude,
+          sourcePoint.longitude,
+          destPoint.latitude,
+          destPoint.longitude,
         );
 
         final fareInfo = FareCalculator.calculatePerPersonFare(distanceKm);
         final rideMoneySaved = fareInfo.savings;
-        final rideCo2Saved = distanceKm * 0.150; // Approximating 150g CO2 saved per km avoided by carpooling
+        final rideCo2Saved = distanceKm * 0.150;
 
-        // Update booking
         transaction.update(bookingRef, {
           'booking_status': 'confirmed',
           'otp_verified': true,
         });
 
-        // Update ride seats
         final newSeats = seatsAvailable - 1;
         transaction.update(rideRef, {
           'seats_available': newSeats,
           'ride_status': newSeats == 0 ? 'full' : 'active',
         });
 
-        // Transfer fare and update savings logic
         transaction.update(riderRef, {
-          'wallet_balance': (riderBalance - pricePerSeat).clamp(0, double.infinity),
+          'wallet_balance':
+              (riderBalance - pricePerSeat).clamp(0, double.infinity),
           'total_money_saved': riderMoneySaved + rideMoneySaved,
           'co2_saved': riderCo2Saved + rideCo2Saved,
+          'rides_completed': riderRides + 1,
         });
         transaction.update(driverRef, {
           'wallet_balance': driverBalance + pricePerSeat,
           'total_money_saved': driverMoneySaved + rideMoneySaved,
           'co2_saved': driverCo2Saved + rideCo2Saved,
+          'rides_completed': driverRides + 1,
         });
       });
 
       return true;
     } catch (e) {
       debugPrint('OTP Verification Error: $e');
-      return false;
+      rethrow;
     }
   }
 
   // -- Chat --
 
-  /// Send a message in a ride's group chat
   Future<void> sendMessage({
     required String rideId,
     required String senderId,
@@ -267,8 +329,11 @@ class FirestoreService {
     required String text,
     bool isDriver = false,
   }) async {
-    await _db.collection('rides').doc(rideId)
-        .collection('messages').add({
+    await _db
+        .collection('rides')
+        .doc(rideId)
+        .collection('messages')
+        .add({
       'sender_id': senderId,
       'sender_name': senderName,
       'text': text,
@@ -277,28 +342,28 @@ class FirestoreService {
     });
   }
 
-  /// Stream messages for a ride's group chat, ordered by time
   Stream<List<Map<String, dynamic>>> getMessages(String rideId) {
-    return _db.collection('rides').doc(rideId)
+    return _db
+        .collection('rides')
+        .doc(rideId)
         .collection('messages')
         .orderBy('timestamp', descending: false)
         .snapshots()
         .map((snapshot) => snapshot.docs.map((doc) {
-          final data = doc.data();
-          return {
-            'id': doc.id,
-            'sender_id': data['sender_id'] ?? '',
-            'sender_name': data['sender_name'] ?? 'Unknown',
-            'text': data['text'] ?? '',
-            'is_driver': data['is_driver'] ?? false,
-            'timestamp': data['timestamp'],
-          };
-        }).toList());
+              final data = doc.data();
+              return {
+                'id': doc.id,
+                'sender_id': data['sender_id'] ?? '',
+                'sender_name': data['sender_name'] ?? 'Unknown',
+                'text': data['text'] ?? '',
+                'is_driver': data['is_driver'] ?? false,
+                'timestamp': data['timestamp'],
+              };
+            }).toList());
   }
 
   // -- Ratings --
 
-  /// Submit a rating for a user (driver or rider)
   Future<void> submitRating(String targetUserId, double rating) async {
     try {
       final userRef = _db.collection('users').doc(targetUserId);
@@ -310,9 +375,9 @@ class FirestoreService {
         final currentRating = (doc.data()?['rating'] ?? 5.0).toDouble();
         final currentCount = doc.data()?['rating_count'] ?? 0;
 
-        // Calculate new moving average
         final newCount = currentCount + 1;
-        final newRating = ((currentRating * currentCount) + rating) / newCount;
+        final newRating =
+            ((currentRating * currentCount) + rating) / newCount;
 
         transaction.update(userRef, {
           'rating': newRating,
@@ -322,5 +387,98 @@ class FirestoreService {
     } catch (e) {
       debugPrint('Rating Submission Error: $e');
     }
+  }
+
+  // -- Activity / Notifications --
+
+  /// Write an activity event for a user
+  Future<void> addActivity({
+    required String userId,
+    required String title,
+    required String body,
+    required String type, // 'ride_created', 'ride_joined', 'seat_update', 'ride_cancelled'
+    String? rideId,
+  }) async {
+    await _db.collection('users').doc(userId).collection('activities').add({
+      'title': title,
+      'body': body,
+      'type': type,
+      'ride_id': rideId,
+      'read': false,
+      'created_at': FieldValue.serverTimestamp(),
+    });
+  }
+
+  /// Stream user's activities
+  Stream<List<Map<String, dynamic>>> getActivities(String userId) {
+    return _db
+        .collection('users')
+        .doc(userId)
+        .collection('activities')
+        .orderBy('created_at', descending: true)
+        .limit(50)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) {
+              final data = doc.data();
+              return {
+                'id': doc.id,
+                ...data,
+              };
+            }).toList());
+  }
+
+  /// Mark activity as read
+  Future<void> markActivityRead(String userId, String activityId) async {
+    await _db
+        .collection('users')
+        .doc(userId)
+        .collection('activities')
+        .doc(activityId)
+        .update({'read': true});
+  }
+
+  /// Get unread activity count
+  Stream<int> getUnreadActivityCount(String userId) {
+    return _db
+        .collection('users')
+        .doc(userId)
+        .collection('activities')
+        .where('read', isEqualTo: false)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.length);
+  }
+
+  // -- SOS Alerts --
+
+  Future<String> createSOSAlert({
+    required String userId,
+    required String rideId,
+    required double lat,
+    required double lng,
+    required List<Map<String, String>> contacts,
+  }) async {
+    final docRef = await _db.collection('sos_alerts').add({
+      'user_id': userId,
+      'ride_id': rideId,
+      'location': GeoPoint(lat, lng),
+      'contacts': contacts,
+      'active': true,
+      'created_at': FieldValue.serverTimestamp(),
+    });
+    return docRef.id;
+  }
+
+  Future<void> updateSOSLocation(
+      String alertId, double lat, double lng) async {
+    await _db.collection('sos_alerts').doc(alertId).update({
+      'location': GeoPoint(lat, lng),
+      'updated_at': FieldValue.serverTimestamp(),
+    });
+  }
+
+  Future<void> deactivateSOS(String alertId) async {
+    await _db.collection('sos_alerts').doc(alertId).update({
+      'active': false,
+    });
   }
 }
