@@ -6,6 +6,7 @@ import '../models/ride_model.dart';
 import '../models/user_model.dart';
 import '../services/firestore_service.dart';
 import '../utils/fare_calculator.dart';
+import 'chat_screen.dart';
 
 class HistoryRideDetailScreen extends StatefulWidget {
   final RideModel? ride;
@@ -202,7 +203,7 @@ class _HistoryRideDetailScreenState extends State<HistoryRideDetailScreen> {
             // Driver details (for rider)
             if (!isDriver && _driver != null) ...[
               Text(
-                'DRIVER DETAILS',
+                'HOST DETAILS',
                 style: GoogleFonts.inter(
                   fontSize: 12,
                   fontWeight: FontWeight.w800,
@@ -274,6 +275,42 @@ class _HistoryRideDetailScreenState extends State<HistoryRideDetailScreen> {
                   const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider(height: 1)),
                   _buildStatRow('Est. Auto Fare', '₹${FareCalculator.calculateTotalFare(distanceKm).toStringAsFixed(0)}', Icons.directions_car_filled_rounded, const Color(0xFF64748B)),
                 ],
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            // Chat History Button
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ChatScreen(
+                        rideId: _rideData!.id,
+                        rideDriverId: _rideData!.driverId,
+                        readOnly: true,
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.chat_bubble_outline_rounded, size: 20),
+                label: Text(
+                  'View Chat History',
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF2563EB),
+                  side: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
               ),
             ),
           ],

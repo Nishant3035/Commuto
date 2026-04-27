@@ -57,3 +57,6 @@ functions/node_modules/
 
 # Firebase config
 .firebaserc
+
+# Environment variables
+.env

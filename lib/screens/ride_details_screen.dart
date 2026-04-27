@@ -128,7 +128,7 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('Rider Details', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A))),
+                          Text('Host Details', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800, color: const Color(0xFF0F172A))),
                         ],
                       ),
                     ),
@@ -312,7 +312,8 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                     width: double.infinity,
                     height: 56,
                     child: ElevatedButton(
-                      onPressed: () {
+                      onPressed: widget.rideData.seatsAvailable > 0
+                          ? () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
@@ -325,14 +326,20 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
                             ),
                           ),
                         );
-                      },
+                      }
+                          : null,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2563EB),
+                        backgroundColor: widget.rideData.seatsAvailable > 0
+                            ? const Color(0xFF2563EB)
+                            : const Color(0xFF94A3B8),
                         foregroundColor: Colors.white,
                         elevation: 0,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       ),
-                      child: Text('Join Ride', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
+                      child: Text(
+                        widget.rideData.seatsAvailable > 0 ? 'Join Ride' : 'Ride Full',
+                        style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700),
+                      ),
                     ),
                   ),
                 ],
@@ -376,7 +383,7 @@ class _RideDetailsScreenState extends State<RideDetailsScreen> {
           const SizedBox(height: 6),
           Text(name, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: const Color(0xFF1A1D26))),
           if (isDriver)
-            Text('Driver', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF2563EB))),
+            Text('Host', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: const Color(0xFF2563EB))),
         ],
       ),
     );

@@ -5,10 +5,12 @@ import '../services/firestore_service.dart';
 
 class RideOtpBottomSheet extends StatefulWidget {
   final String bookingId;
+  final String? rideId;
 
   const RideOtpBottomSheet({
     super.key,
     required this.bookingId,
+    this.rideId,
   });
 
   @override
@@ -38,12 +40,16 @@ class _RideOtpBottomSheetState extends State<RideOtpBottomSheet>
       return;
     }
 
+    // Guard against duplicate calls
+    if (_isLoading) return;
+
     setState(() {
       _isLoading = true;
       _errorText = null;
     });
 
     try {
+      debugPrint('🔐 RideOtpBottomSheet: verifying OTP "$_enteredOtp" for booking ${widget.bookingId}');
       final success =
           await FirestoreService().verifyOtp(widget.bookingId, _enteredOtp);
       
@@ -52,10 +58,26 @@ class _RideOtpBottomSheetState extends State<RideOtpBottomSheet>
           Navigator.pop(context, true); // Success
         }
       } else {
-        _handleError('Invalid OTP ❌');
+        // If the full verify failed, try a direct OTP check to give a better error
+        if (widget.rideId != null) {
+          final otpMatch = await FirestoreService().checkOtpOnly(widget.rideId!, _enteredOtp);
+          if (otpMatch) {
+            _handleError('OTP correct but booking failed. Try again.');
+          } else {
+            _handleError('Incorrect OTP. Please check with your host.');
+          }
+        } else {
+          _handleError('Incorrect OTP. Please check with your host.');
+        }
       }
     } catch (e) {
-      _handleError('Error: ${e.toString()}');
+      debugPrint('❌ RideOtpBottomSheet error: $e');
+      final errorMsg = e.toString();
+      if (errorMsg.contains('No seats available')) {
+        _handleError('No seats available. Ride is full.');
+      } else {
+        _handleError('Verification error. Please try again.');
+      }
     }
   }
 
@@ -150,7 +172,7 @@ class _RideOtpBottomSheetState extends State<RideOtpBottomSheet>
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Enter the 4-digit code provided by your driver',
+                        'Enter the 4-digit code provided by your host',
                         style: GoogleFonts.inter(
                           fontSize: 13,
                           fontWeight: FontWeight.w500,

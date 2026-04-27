@@ -75,7 +75,10 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => RideOtpBottomSheet(bookingId: widget.bookingId),
+      builder: (context) => RideOtpBottomSheet(
+        bookingId: widget.bookingId,
+        rideId: widget.rideData.id,
+      ),
     );
 
     if (verified == true && mounted) {
@@ -396,7 +399,7 @@ class _ActiveRideScreenState extends State<ActiveRideScreen> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text('Your Driver',
+                                  Text('Your Host',
                                       style: GoogleFonts.inter(
                                           fontSize: 12,
                                           color: const Color(0xFF64748B),

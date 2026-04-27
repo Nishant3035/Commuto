@@ -547,12 +547,12 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                                 _SeatButton(
                                   icon: Icons.add_rounded,
                                   onTap: () {
-                                    if (_seats < 6) {
+                                    if (_seats < 3) {
                                       setState(() => _seats++);
                                       _calculateFare();
                                     }
                                   },
-                                  enabled: _seats < 6,
+                                  enabled: _seats < 3,
                                 ),
                               ],
                             ),
@@ -692,8 +692,8 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                         const SizedBox(height: 24),
                       ],
 
-                      // Girls Only Preference
-
+                      // Girls Only Preference — only show for female users
+                      if (AuthService.userGender == 'Female') ...[
                         _SectionLabel(label: 'CROWD PREFERENCE'),
                         const SizedBox(height: 10),
                         Container(
@@ -733,7 +733,8 @@ class _OfferRideScreenState extends State<OfferRideScreen>
                             ],
                           ),
                         ),
-                      const SizedBox(height: 24),
+                        const SizedBox(height: 24),
+                      ],
 
                       // Notes section
                       _SectionLabel(label: 'NOTES (OPTIONAL)'),

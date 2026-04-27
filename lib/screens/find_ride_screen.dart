@@ -128,7 +128,8 @@ class _FindRideScreenState extends State<FindRideScreen> {
             const SizedBox(height: 12),
             _buildSearchHeader(),
 
-            // Women-Only Toggle
+            // Women-Only Toggle — only show for female users
+            if (AuthService.userGender == 'Female')
               Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
@@ -348,16 +349,20 @@ class _FindRideScreenState extends State<FindRideScreen> {
 
   Widget _buildRideCard(RideModel ride) {
     // Use denormalized driver data from ride instead of extra Firestore reads
-    final driverName = ride.driverName.isNotEmpty ? ride.driverName : 'Driver';
+    final driverName = ride.driverName.isNotEmpty ? ride.driverName : 'Host';
+    final isFull = ride.seatsAvailable <= 0;
 
     return InkWell(
-      onTap: () => _handleJoinRide(ride),
+      onTap: isFull ? null : () => _handleJoinRide(ride),
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isFull ? const Color(0xFFF8FAFC) : Colors.white,
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: const Color(0xFFF1F5F9), width: 1.5),
+          border: Border.all(
+            color: isFull ? const Color(0xFFE2E8F0) : const Color(0xFFF1F5F9),
+            width: 1.5,
+          ),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.02),
@@ -366,7 +371,9 @@ class _FindRideScreenState extends State<FindRideScreen> {
             ),
           ],
         ),
-        child: Column(
+        child: Opacity(
+          opacity: isFull ? 0.6 : 1.0,
+          child: Column(
           children: [
             // Top Section
             Padding(
@@ -495,25 +502,30 @@ class _FindRideScreenState extends State<FindRideScreen> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 8),
                     decoration: BoxDecoration(
-                      color: ride.seatsAvailable > 0
-                          ? const Color(0xFFEFF6FF)
-                          : const Color(0xFFF1F5F9),
+                      color: isFull
+                          ? const Color(0xFFFEE2E2)
+                          : ride.seatsAvailable > 0
+                              ? const Color(0xFFEFF6FF)
+                              : const Color(0xFFF1F5F9),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      '${ride.seatsAvailable} seats left',
+                      isFull ? 'FULL' : '${ride.seatsAvailable} seats left',
                       style: GoogleFonts.inter(
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
-                          color: ride.seatsAvailable > 0
-                              ? const Color(0xFF2563EB)
-                              : const Color(0xFF94A3B8)),
+                          color: isFull
+                              ? const Color(0xFFDC2626)
+                              : ride.seatsAvailable > 0
+                                  ? const Color(0xFF2563EB)
+                                  : const Color(0xFF94A3B8)),
                     ),
                   ),
                 ],
               ),
             ),
           ],
+        ),
         ),
       ),
     );

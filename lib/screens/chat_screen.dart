@@ -7,11 +7,13 @@ import '../services/auth_service.dart';
 class ChatScreen extends StatefulWidget {
   final String rideId;
   final String rideDriverId;
+  final bool readOnly;
 
   const ChatScreen({
     super.key,
     required this.rideId,
     required this.rideDriverId,
+    this.readOnly = false,
   });
 
   @override
@@ -92,7 +94,10 @@ class _ChatScreenState extends State<ChatScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Ride Chat', style: GoogleFonts.inter(color: const Color(0xFF1A1D26), fontSize: 18, fontWeight: FontWeight.w800)),
-            Text('Group conversation', style: GoogleFonts.inter(color: const Color(0xFF64748B), fontSize: 12, fontWeight: FontWeight.w500)),
+            Text(
+              widget.readOnly ? 'Chat history' : 'Group conversation',
+              style: GoogleFonts.inter(color: const Color(0xFF64748B), fontSize: 12, fontWeight: FontWeight.w500),
+            ),
           ],
         ),
         iconTheme: const IconThemeData(color: Color(0xFF1A1D26)),
@@ -197,7 +202,34 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ),
 
-          // Input field
+          // Input field or chat ended banner
+          if (widget.readOnly)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                border: Border(top: BorderSide(color: const Color(0xFFE2E8F0))),
+              ),
+              child: SafeArea(
+                top: false,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.lock_outline_rounded, size: 16, color: Color(0xFF94A3B8)),
+                    const SizedBox(width: 8),
+                    Text(
+                      'This chat has ended with the trip',
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF94A3B8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
           Container(
             padding: const EdgeInsets.only(
               left: 16,
@@ -305,7 +337,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      'DRIVER',
+                      'HOST',
                       style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w800, color: const Color(0xFF059669), letterSpacing: 0.5),
                     ),
                   ),

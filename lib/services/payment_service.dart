@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 /// Payment service using Razorpay in TEST mode.
 /// To switch to production, replace the test key with your live key.
@@ -7,7 +8,7 @@ class PaymentService {
   static final Razorpay _razorpay = Razorpay();
   
   // Razorpay TEST key — replace with live key for production
-  static const String _testKey = 'rzp_test_1DP5mmOlF5G5ag';
+  static String get _testKey => dotenv.env['RAZORPAY_TEST_KEY'] ?? '';
   
   static Function(double amount)? _onSuccess;
   static Function(String error)? _onFailure;

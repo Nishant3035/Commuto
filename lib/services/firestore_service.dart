@@ -216,25 +216,55 @@ class FirestoreService {
   }
 
   /// Verifies OTP and transfers fare
+  /// Returns true on success, false on OTP mismatch, throws on other errors.
   Future<bool> verifyOtp(String bookingId, String otp) async {
     try {
       final bookingRef = _db.collection('bookings').doc(bookingId);
       final bookingDoc = await bookingRef.get();
-      if (!bookingDoc.exists) return false;
+      if (!bookingDoc.exists) {
+        debugPrint('❌ OTP Verify: Booking $bookingId not found');
+        return false;
+      }
 
-      final rideId = bookingDoc.data()!['ride_id'];
-      final riderId = bookingDoc.data()!['rider_id'];
+      final rideId = bookingDoc.data()!['ride_id'] as String?;
+      final riderId = bookingDoc.data()!['rider_id'] as String?;
+      if (rideId == null || riderId == null) {
+        debugPrint('❌ OTP Verify: Missing ride_id or rider_id in booking');
+        return false;
+      }
 
+      debugPrint('🔑 OTP Verify: bookingId=$bookingId, rideId=$rideId, riderId=$riderId');
+
+      // Fetch the stored OTP from the private sub-collection
       final privateDoc = await _db
           .collection('rides')
           .doc(rideId)
           .collection('private')
           .doc('data')
           .get();
-      if (!privateDoc.exists) return false;
+      if (!privateDoc.exists) {
+        debugPrint('❌ OTP Verify: Private data doc not found for ride $rideId');
+        return false;
+      }
 
-      final actualOtp = privateDoc.data()?['otp_code']?.toString();
-      if (otp.trim() != actualOtp?.trim()) return false;
+      // Robust OTP comparison: normalize both values to trimmed strings
+      final rawStoredOtp = privateDoc.data()?['otp_code'];
+      final String actualOtp = rawStoredOtp?.toString().trim() ?? '';
+      final String enteredOtp = otp.trim();
+
+      debugPrint('🔑 OTP Verify: entered="$enteredOtp" vs stored="$actualOtp" (raw type: ${rawStoredOtp.runtimeType})');
+
+      if (enteredOtp.isEmpty || actualOtp.isEmpty) {
+        debugPrint('❌ OTP Verify: Empty OTP value');
+        return false;
+      }
+
+      if (enteredOtp != actualOtp) {
+        debugPrint('❌ OTP Verify: Mismatch — entered "$enteredOtp" != stored "$actualOtp"');
+        return false;
+      }
+
+      debugPrint('✅ OTP Verify: Match! Proceeding with transaction...');
 
       final rideRef = _db.collection('rides').doc(rideId);
       final riderRef = _db.collection('users').doc(riderId);
@@ -313,10 +343,31 @@ class FirestoreService {
         });
       });
 
+      debugPrint('✅ OTP Verify: Transaction completed successfully');
       return true;
     } catch (e) {
-      debugPrint('OTP Verification Error: $e');
+      debugPrint('❌ OTP Verification Error: $e');
       rethrow;
+    }
+  }
+
+  /// Direct OTP check without the full transaction — useful for debugging
+  Future<bool> checkOtpOnly(String rideId, String otp) async {
+    try {
+      final privateDoc = await _db
+          .collection('rides')
+          .doc(rideId)
+          .collection('private')
+          .doc('data')
+          .get();
+      if (!privateDoc.exists) return false;
+      final stored = privateDoc.data()?['otp_code']?.toString().trim() ?? '';
+      final entered = otp.trim();
+      debugPrint('🔍 checkOtpOnly: entered="$entered" vs stored="$stored"');
+      return entered == stored;
+    } catch (e) {
+      debugPrint('❌ checkOtpOnly error: $e');
+      return false;
     }
   }
 

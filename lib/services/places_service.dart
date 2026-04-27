@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 
@@ -13,7 +14,7 @@ import 'places_service_web_stub.dart'
 /// On MOBILE: Uses HTTP API (no CORS issues)
 /// On WEB: Uses Google Maps JavaScript API via JS interop (avoids CORS)
 class PlacesService {
-  static const String _apiKey = 'AIzaSyCVpIx5LWUzmA8MKu12S1jwwi_RG5MaLjw';
+  static String get _apiKey => dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
 
   // Mumbai bias
   static const double _biasLat = 19.0760;
@@ -30,6 +31,12 @@ class PlacesService {
     LatLng? biasLocation,
   }) async {
     if (query.trim().isEmpty) return [];
+
+    // Validate API key
+    if (_apiKey.isEmpty) {
+      debugPrint('⚠️ PlacesService: GOOGLE_MAPS_API_KEY is empty! Set it in .env');
+      return [];
+    }
 
     final lat = biasLocation?.latitude ?? _biasLat;
     final lng = biasLocation?.longitude ?? _biasLng;
@@ -67,13 +74,14 @@ class PlacesService {
     );
 
     if (response.statusCode != 200) {
-      debugPrint('⚠️ Places API HTTP ${response.statusCode}');
+      debugPrint('⚠️ Places API HTTP ${response.statusCode}: ${response.body.substring(0, (response.body.length).clamp(0, 200))}');
       return [];
     }
 
     final data = json.decode(response.body);
     if (data['status'] != 'OK' && data['status'] != 'ZERO_RESULTS') {
-      debugPrint('⚠️ Places API status: ${data['status']} — ${data['error_message'] ?? ''}');
+      debugPrint('⚠️ Places API status: ${data['status']} — ${data['error_message'] ?? 'no error message'}');
+      debugPrint('   API key used: ${_apiKey.substring(0, 8)}...');
       return [];
     }
 

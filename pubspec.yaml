@@ -50,6 +50,7 @@ dependencies:
   cloud_functions: ^6.1.0
   firebase_messaging: ^16.1.3
   web: ^1.1.0
+  flutter_dotenv: ^6.0.1
 
 dev_dependencies:
   flutter_test:
@@ -87,6 +88,7 @@ flutter:
     - assets/images/commuto_logo.png
     - assets/images/taxi_icon.png
     - assets/images/hero_bg.png
+    - .env
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
