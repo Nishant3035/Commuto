@@ -1,64 +1,59 @@
 import 'dart:async';
 import 'dart:js_interop';
+import 'dart:js_util' as js_util;
 import 'package:flutter/foundation.dart';
 import 'package:web/web.dart' as html;
 
 /// Web-specific Places API implementation using Google Maps JavaScript API.
 /// This avoids CORS issues by calling the JS API directly in the browser.
 
-/// Search places using Google Maps JS AutocompleteService
+/// Search places using Google Maps JS AutocompleteSuggestion
 Future<List<Map<String, dynamic>>> searchPlacesWeb(
   String query,
   double biasLat,
   double biasLng,
 ) async {
   try {
-    final completer = Completer<List<Map<String, dynamic>>>();
-
-    // Access the google.maps.places.AutocompleteService via JS interop
-    final service = _getAutocompleteService();
-    if (service == null) {
-      debugPrint('⚠️ Google Maps JS AutocompleteService not available');
-      return [];
-    }
-
     final request = {
       'input': query,
       'componentRestrictions': {'country': 'in'},
     }.jsify() as JSObject;
 
-    service.getPlacePredictions(
-      request,
-      ((JSArray? predictions, JSString status) {
-        if (status.toDart != 'OK') {
-          debugPrint('⚠️ Web Places API Error: ${status.toDart}');
-          completer.complete([]);
-          return;
-        }
-        if (predictions == null) {
-          completer.complete([]);
-          return;
-        }
+    final response = await js_util.promiseToFuture<JSObject>(
+      _AutocompleteSuggestionClass.fetchAutocompleteSuggestions(request),
+    ).timeout(const Duration(seconds: 8), onTimeout: () => JSObject());
 
-        final results = <Map<String, dynamic>>[];
-        final dartPredictions = predictions.toDart;
-        for (int i = 0; i < dartPredictions.length; i++) {
-          final p = dartPredictions[i] as _AutocompletePrediction;
-          results.add({
-            'place_id': p.place_id.toDart,
-            'description': p.description.toDart,
-            'main_text': p.structured_formatting?.main_text?.toDart ?? p.description.toDart,
-            'secondary_text': p.structured_formatting?.secondary_text?.toDart ?? '',
-          });
-        }
-        completer.complete(results);
-      }).toJS,
-    );
+    final suggestions = js_util.getProperty(response, 'suggestions');
+    if (suggestions is! JSArray) return [];
 
-    return await completer.future.timeout(
-      const Duration(seconds: 8),
-      onTimeout: () => [],
-    );
+    final results = <Map<String, dynamic>>[];
+    final dartSuggestions = suggestions.toDart;
+    for (int i = 0; i < dartSuggestions.length; i++) {
+      final suggestion = dartSuggestions[i];
+      if (suggestion is! JSObject) continue;
+      final prediction = js_util.getProperty(suggestion, 'placePrediction');
+      if (prediction is! JSObject) continue;
+
+      final placeId = _readText(js_util.getProperty(prediction, 'placeId'));
+      final fullText = _readText(js_util.getProperty(prediction, 'text'));
+      final structured = js_util.getProperty(prediction, 'structuredFormat');
+      final mainText = structured is JSObject
+          ? _readText(js_util.getProperty(structured, 'mainText'))
+          : '';
+      final secondaryText = structured is JSObject
+          ? _readText(js_util.getProperty(structured, 'secondaryText'))
+          : '';
+
+      if (placeId.isEmpty) continue;
+      results.add({
+        'place_id': placeId,
+        'description': fullText,
+        'main_text': mainText.isNotEmpty ? mainText : fullText,
+        'secondary_text': secondaryText,
+      });
+    }
+
+    return results;
   } catch (e) {
     debugPrint('⚠️ Web Places search error: $e');
     return [];
@@ -120,10 +115,9 @@ Future<Map<String, dynamic>?> getPlaceDetailsWeb(String placeId) async {
 // JS Interop bindings for Google Maps Places JavaScript API
 // ──────────────────────────────────────────────────────────
 
-@JS('google.maps.places.AutocompleteService')
-extension type _AutocompleteServiceClass._(JSObject _) implements JSObject {
-  external factory _AutocompleteServiceClass();
-  external void getPlacePredictions(JSObject request, JSFunction callback);
+@JS('google.maps.places.AutocompleteSuggestion')
+extension type _AutocompleteSuggestionClass._(JSObject _) implements JSObject {
+  external static JSPromise fetchAutocompleteSuggestions(JSObject request);
 }
 
 @JS('google.maps.places.PlacesService')
@@ -139,35 +133,6 @@ extension type _LatLngClass._(JSObject _) implements JSObject {
   external double lng();
 }
 
-extension type _AutocompleteRequest._(JSObject _) implements JSObject {
-  external factory _AutocompleteRequest({
-    JSString input,
-    _ComponentRestrictions componentRestrictions,
-  });
-}
-
-extension type _ComponentRestrictions._(JSObject _) implements JSObject {
-  external factory _ComponentRestrictions({JSString country});
-}
-
-extension type _PlaceDetailsRequest._(JSObject _) implements JSObject {
-  external factory _PlaceDetailsRequest({
-    JSString placeId,
-    JSArray fields,
-  });
-}
-
-extension type _AutocompletePrediction._(JSObject _) implements JSObject {
-  external JSString get place_id;
-  external JSString get description;
-  external _StructuredFormatting? get structured_formatting;
-}
-
-extension type _StructuredFormatting._(JSObject _) implements JSObject {
-  external JSString? get main_text;
-  external JSString? get secondary_text;
-}
-
 extension type _PlaceResult._(JSObject _) implements JSObject {
   external JSString? get name;
   external JSString? get formatted_address;
@@ -180,13 +145,13 @@ extension type _Geometry._(JSObject _) implements JSObject {
 
 // ── Helper functions ──
 
-_AutocompleteServiceClass? _getAutocompleteService() {
-  try {
-    return _AutocompleteServiceClass();
-  } catch (e) {
-    debugPrint('⚠️ Cannot create AutocompleteService: $e');
-    return null;
+String _readText(dynamic value) {
+  if (value is JSString) return value.toDart;
+  if (value is JSObject) {
+    final inner = js_util.getProperty(value, 'text');
+    if (inner is JSString) return inner.toDart;
   }
+  return '';
 }
 
 _PlacesServiceClass? _getPlacesService() {
