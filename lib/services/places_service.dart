@@ -14,6 +14,7 @@ import 'places_service_web_stub.dart'
 /// On MOBILE: Uses HTTP API (no CORS issues)
 /// On WEB: Uses Google Maps JavaScript API via JS interop (avoids CORS)
 class PlacesService {
+  static const String _fallbackApiKey = 'AIzaSyCVpIx5LWUzmA8MKu12S1jwwi_RG5MaLjw';
   static String get _apiKey => dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
 
   // Mumbai bias
@@ -33,7 +34,7 @@ class PlacesService {
     if (query.trim().isEmpty) return [];
 
     // Validate API key for mobile only; web uses JS API key from index.html.
-    if (!kIsWeb && _apiKey.isEmpty) {
+    if (!kIsWeb && _apiKey.isEmpty && _fallbackApiKey.isEmpty) {
       debugPrint('⚠️ PlacesService: GOOGLE_MAPS_API_KEY is empty! Set it in .env');
       return [];
     }
@@ -59,13 +60,14 @@ class PlacesService {
     double lat,
     double lng,
   ) async {
+    final apiKey = _apiKey.isNotEmpty ? _apiKey : _fallbackApiKey;
     final url = Uri.parse(
       'https://maps.googleapis.com/maps/api/place/autocomplete/json'
       '?input=${Uri.encodeComponent(query)}'
       '&location=$lat,$lng'
       '&radius=$_biasRadius'
       '&components=country:in'
-      '&key=$_apiKey',
+      '&key=$apiKey',
     );
 
     final response = await http.get(url).timeout(
@@ -81,7 +83,7 @@ class PlacesService {
     final data = json.decode(response.body);
     if (data['status'] != 'OK' && data['status'] != 'ZERO_RESULTS') {
       debugPrint('⚠️ Places API status: ${data['status']} — ${data['error_message'] ?? 'no error message'}');
-      debugPrint('   API key used: ${_apiKey.substring(0, 8)}...');
+      debugPrint('   API key used: ${apiKey.substring(0, 8)}...');
       return [];
     }
 
@@ -116,11 +118,12 @@ class PlacesService {
   static Future<Map<String, dynamic>?> _getPlaceDetailsMobile(
     String placeId,
   ) async {
+    final apiKey = _apiKey.isNotEmpty ? _apiKey : _fallbackApiKey;
     final url = Uri.parse(
       'https://maps.googleapis.com/maps/api/place/details/json'
       '?place_id=$placeId'
       '&fields=name,geometry,formatted_address'
-      '&key=$_apiKey',
+      '&key=$apiKey',
     );
 
     final response = await http.get(url).timeout(
