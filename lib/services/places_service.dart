@@ -32,8 +32,8 @@ class PlacesService {
   }) async {
     if (query.trim().isEmpty) return [];
 
-    // Validate API key
-    if (_apiKey.isEmpty) {
+    // Validate API key for mobile only; web uses JS API key from index.html.
+    if (!kIsWeb && _apiKey.isEmpty) {
       debugPrint('⚠️ PlacesService: GOOGLE_MAPS_API_KEY is empty! Set it in .env');
       return [];
     }

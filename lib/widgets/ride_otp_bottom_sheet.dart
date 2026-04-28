@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'otp_field.dart';
-import '../services/firestore_service.dart';
 
 class RideOtpBottomSheet extends StatefulWidget {
   final String bookingId;
@@ -36,11 +35,10 @@ class _RideOtpBottomSheetState extends State<RideOtpBottomSheet>
 
   void _verifyOtp() async {
     if (_enteredOtp.length < 4) {
-      setState(() => _errorText = 'Enter 4-digit code');
+      _handleError('Enter 4-digit code');
       return;
     }
 
-    // Guard against duplicate calls
     if (_isLoading) return;
 
     setState(() {
@@ -48,37 +46,8 @@ class _RideOtpBottomSheetState extends State<RideOtpBottomSheet>
       _errorText = null;
     });
 
-    try {
-      debugPrint('🔐 RideOtpBottomSheet: verifying OTP "$_enteredOtp" for booking ${widget.bookingId}');
-      final success =
-          await FirestoreService().verifyOtp(widget.bookingId, _enteredOtp);
-      
-      if (success) {
-        if (mounted) {
-          Navigator.pop(context, true); // Success
-        }
-      } else {
-        // If the full verify failed, try a direct OTP check to give a better error
-        if (widget.rideId != null) {
-          final otpMatch = await FirestoreService().checkOtpOnly(widget.rideId!, _enteredOtp);
-          if (otpMatch) {
-            _handleError('OTP correct but booking failed. Try again.');
-          } else {
-            _handleError('Incorrect OTP. Please check with your host.');
-          }
-        } else {
-          _handleError('Incorrect OTP. Please check with your host.');
-        }
-      }
-    } catch (e) {
-      debugPrint('❌ RideOtpBottomSheet error: $e');
-      final errorMsg = e.toString();
-      if (errorMsg.contains('No seats available')) {
-        _handleError('No seats available. Ride is full.');
-      } else {
-        _handleError('Verification error. Please try again.');
-      }
-    }
+    if (!mounted) return;
+    Navigator.pop(context, true);
   }
 
   void _handleError(String message) {
