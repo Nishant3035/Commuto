@@ -16,6 +16,7 @@ import 'places_service_web_stub.dart'
 class PlacesService {
   static const String _fallbackApiKey = 'AIzaSyCVpIx5LWUzmA8MKu12S1jwwi_RG5MaLjw';
   static String get _apiKey => dotenv.env['GOOGLE_MAPS_API_KEY'] ?? '';
+  static String? _lastError;
 
   // Mumbai bias
   static const double _biasLat = 19.0760;
@@ -31,11 +32,13 @@ class PlacesService {
     String query, {
     LatLng? biasLocation,
   }) async {
+    _lastError = null;
     if (query.trim().isEmpty) return [];
 
     // Validate API key for mobile only; web uses JS API key from index.html.
     if (!kIsWeb && _apiKey.isEmpty && _fallbackApiKey.isEmpty) {
       debugPrint('⚠️ PlacesService: GOOGLE_MAPS_API_KEY is empty! Set it in .env');
+      _lastError = 'Places API key missing';
       return [];
     }
 
@@ -50,6 +53,7 @@ class PlacesService {
       }
     } catch (e) {
       debugPrint('⚠️ PlacesService.searchPlaces error: $e');
+      _lastError = 'Places API error: $e';
       return [];
     }
   }
@@ -82,8 +86,11 @@ class PlacesService {
 
     final data = json.decode(response.body);
     if (data['status'] != 'OK' && data['status'] != 'ZERO_RESULTS') {
-      debugPrint('⚠️ Places API status: ${data['status']} — ${data['error_message'] ?? 'no error message'}');
+      final status = data['status']?.toString() ?? 'UNKNOWN';
+      final errorMessage = data['error_message']?.toString() ?? 'no error message';
+      debugPrint('⚠️ Places API status: $status — $errorMessage');
       debugPrint('   API key used: ${apiKey.substring(0, 8)}...');
+      _lastError = 'Places API: $status — $errorMessage';
       return [];
     }
 
@@ -182,6 +189,7 @@ class PlacesService {
     String query, {
     LatLng? biasLocation,
     required Function(List<Map<String, dynamic>>) onResults,
+    Function(String message)? onError,
     Duration delay = const Duration(milliseconds: 350),
   }) {
     _debounceTimer?.cancel();
@@ -192,11 +200,21 @@ class PlacesService {
     _debounceTimer = Timer(delay, () async {
       final results = await searchPlaces(query, biasLocation: biasLocation);
       onResults(results);
+      final error = takeLastError();
+      if (error != null && onError != null) {
+        onError(error);
+      }
     });
   }
 
   /// Cancel any pending debounced search
   static void cancelPendingSearch() {
     _debounceTimer?.cancel();
+  }
+
+  static String? takeLastError() {
+    final error = _lastError;
+    _lastError = null;
+    return error;
   }
 }

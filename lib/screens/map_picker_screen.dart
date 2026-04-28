@@ -125,6 +125,19 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
           });
         }
       },
+      onError: (message) {
+        if (!mounted) return;
+        setState(() => _isSearching = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message,
+                style: GoogleFonts.inter(fontWeight: FontWeight.w500)),
+            backgroundColor: const Color(0xFFEF4444),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      },
     );
   }
 
